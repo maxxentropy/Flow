@@ -1,0 +1,539 @@
+{
+  "info": {
+    "_postman_id": "mcp-server-collection",
+    "name": "MCP Server Collection",
+    "description": "Collection for testing the Model Context Protocol (MCP) Server implementation. This collection tests the Server-Sent Events (SSE) transport with JSON-RPC 2.0 protocol.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "SSE Connection",
+      "item": [
+        {
+          "name": "Initialize Connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"0.1.0\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"Postman MCP Client\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Initializes the MCP server connection. This must be the first request sent to establish the session."
+          }
+        },
+        {
+          "name": "Send Initialized Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"notifications/initialized\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Sends the initialized notification to complete the handshake."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tools",
+      "item": [
+        {
+          "name": "List Tools",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/list\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Lists all available tools registered with the MCP server."
+          }
+        },
+        {
+          "name": "Call Echo Tool",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"echo\",\n    \"arguments\": {\n      \"message\": \"Hello from Postman!\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Calls the echo tool with a test message."
+          }
+        },
+        {
+          "name": "Call Calculator Tool - Add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"calculator\",\n    \"arguments\": {\n      \"operation\": \"add\",\n      \"a\": 10,\n      \"b\": 5\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Calls the calculator tool to add two numbers."
+          }
+        },
+        {
+          "name": "Call Calculator Tool - Multiply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"calculator\",\n    \"arguments\": {\n      \"operation\": \"multiply\",\n      \"a\": 7,\n      \"b\": 8\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Calls the calculator tool to multiply two numbers."
+          }
+        },
+        {
+          "name": "Call DateTime Tool",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 6,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"datetime\",\n    \"arguments\": {\n      \"format\": \"yyyy-MM-dd HH:mm:ss\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Calls the datetime tool to get the current date and time in a specific format."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resources",
+      "item": [
+        {
+          "name": "List Resources",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 7,\n  \"method\": \"resources/list\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Lists all available resources from registered resource providers."
+          }
+        },
+        {
+          "name": "Read Resource",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 8,\n  \"method\": \"resources/read\",\n  \"params\": {\n    \"uri\": \"file://README.md\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Reads the content of a specific resource by URI."
+          }
+        },
+        {
+          "name": "Subscribe to Resource",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 9,\n  \"method\": \"resources/subscribe\",\n  \"params\": {\n    \"uri\": \"file://config.json\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Subscribes to updates for a specific resource."
+          }
+        },
+        {
+          "name": "Unsubscribe from Resource",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 10,\n  \"method\": \"resources/unsubscribe\",\n  \"params\": {\n    \"uri\": \"file://config.json\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Unsubscribes from updates for a specific resource."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Prompts",
+      "item": [
+        {
+          "name": "List Prompts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 11,\n  \"method\": \"prompts/list\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Lists all available prompts from registered prompt providers."
+          }
+        },
+        {
+          "name": "Get Prompt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 12,\n  \"method\": \"prompts/get\",\n  \"params\": {\n    \"name\": \"example-prompt\",\n    \"arguments\": {\n      \"topic\": \"MCP Server\",\n      \"style\": \"technical\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Gets a specific prompt with optional arguments."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logging",
+      "item": [
+        {
+          "name": "Set Log Level",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 13,\n  \"method\": \"logging/setLevel\",\n  \"params\": {\n    \"level\": \"debug\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Sets the logging level for the MCP server. Valid levels: error, warning, info, debug."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Cases",
+      "item": [
+        {
+          "name": "Invalid JSON-RPC Version",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"1.0\",\n  \"id\": 100,\n  \"method\": \"tools/list\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Tests error handling for invalid JSON-RPC version."
+          }
+        },
+        {
+          "name": "Method Not Found",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 101,\n  \"method\": \"invalid/method\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Tests error handling for non-existent methods."
+          }
+        },
+        {
+          "name": "Invalid Parameters",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 102,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"invalidParam\": \"test\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Tests error handling for invalid method parameters."
+          }
+        },
+        {
+          "name": "Parse Error",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ invalid json"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sse"
+              ]
+            },
+            "description": "Tests error handling for malformed JSON."
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# Development Dockerfile with SDK for hot reload
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+WORKDIR /app
+
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install global tools
+RUN dotnet tool install --global dotnet-ef
+ENV PATH="$PATH:/root/.dotnet/tools"
+
+# Keep container running
+ENTRYPOINT ["tail", "-f", "/dev/null"]

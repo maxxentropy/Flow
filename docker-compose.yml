@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # SSE/Web transport service
+  mcpserver-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    container_name: mcpserver-web
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - McpServer__Transport__Sse__AllowedOrigins__0=http://localhost:3000
+      - McpServer__Transport__Sse__AllowedOrigins__1=https://localhost:3000
+      - McpServer__Transport__Sse__RequireHttps=false
+    volumes:
+      - ./public:/app/public:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Stdio transport service (for development/testing)
+  mcpserver-console:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: console
+    container_name: mcpserver-console
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+    volumes:
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    profiles:
+      - console
+
+# Docker Compose for development environment
+networks:
+  default:
+    name: mcpserver-network

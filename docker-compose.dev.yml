@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Development version with hot reload
+  mcpserver-web-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: mcpserver-web-dev
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=https://+:5001;http://+:5000
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=mcpserver
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
+      - McpServer__Transport__Sse__AllowedOrigins__0=http://localhost:3000
+      - McpServer__Transport__Sse__AllowedOrigins__1=https://localhost:3000
+      - McpServer__Transport__Sse__RequireHttps=false
+    volumes:
+      - ./src:/src:ro
+      - ./public:/app/public:ro
+      - ./logs:/app/logs
+      - ~/.aspnet/https:/https:ro
+    command: ["dotnet", "watch", "run", "--project", "/src/McpServer.Web/McpServer.Web.csproj"]
+
+  # Console app for testing stdio transport
+  mcpserver-console-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: mcpserver-console-dev
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+    volumes:
+      - ./src:/src:ro
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: true
+    command: ["dotnet", "run", "--project", "/src/McpServer.Console/McpServer.Console.csproj"]
+    profiles:
+      - console

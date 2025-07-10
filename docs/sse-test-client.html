@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server SSE Test Client</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .control-panel {
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin-bottom: 10px;
+            padding: 5px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .log-entry.sent {
+            background-color: #e3f2fd;
+        }
+        .log-entry.received {
+            background-color: #f3e5f5;
+        }
+        .log-entry.error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+        .timestamp {
+            color: #6c757d;
+            font-size: 11px;
+        }
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            margin-bottom: 10px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>MCP Server SSE Test Client</h1>
+    
+    <div class="control-panel">
+        <div class="status disconnected" id="status">Disconnected</div>
+        <input type="text" id="serverUrl" value="http://localhost:5000/sse" placeholder="Server URL" style="width: 300px; padding: 8px; margin-right: 10px;">
+        <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        <button onclick="clearLogs()">Clear Logs</button>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h2>Send Request</h2>
+            
+            <select id="requestTemplate" onchange="loadTemplate()">
+                <option value="">-- Select a template --</option>
+                <option value="initialize">Initialize</option>
+                <option value="initialized">Initialized Notification</option>
+                <option value="tools-list">List Tools</option>
+                <option value="tool-echo">Call Echo Tool</option>
+                <option value="tool-calc-add">Calculator Add</option>
+                <option value="tool-calc-multiply">Calculator Multiply</option>
+                <option value="tool-datetime">Get DateTime</option>
+                <option value="resources-list">List Resources</option>
+                <option value="resource-read">Read Resource</option>
+                <option value="prompts-list">List Prompts</option>
+                <option value="logging-setlevel">Set Log Level</option>
+            </select>
+
+            <textarea id="requestBody" placeholder="Enter JSON-RPC request...">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "0.1.0",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "SSE Test Client",
+      "version": "1.0.0"
+    }
+  }
+}</textarea>
+            
+            <button onclick="sendRequest()" id="sendBtn" disabled>Send Request</button>
+        </div>
+
+        <div class="panel">
+            <h2>Communication Log</h2>
+            <div class="log" id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let requestId = 1;
+
+        const templates = {
+            'initialize': {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "0.1.0",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "SSE Test Client",
+                        "version": "1.0.0"
+                    }
+                }
+            },
+            'initialized': {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            },
+            'tools-list': {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list"
+            },
+            'tool-echo': {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "echo",
+                    "arguments": {
+                        "message": "Hello from SSE client!"
+                    }
+                }
+            },
+            'tool-calc-add': {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "calculator",
+                    "arguments": {
+                        "operation": "add",
+                        "a": 10,
+                        "b": 5
+                    }
+                }
+            },
+            'tool-calc-multiply': {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "calculator",
+                    "arguments": {
+                        "operation": "multiply",
+                        "a": 7,
+                        "b": 8
+                    }
+                }
+            },
+            'tool-datetime': {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "datetime",
+                    "arguments": {
+                        "format": "yyyy-MM-dd HH:mm:ss"
+                    }
+                }
+            },
+            'resources-list': {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "resources/list"
+            },
+            'resource-read': {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "resources/read",
+                "params": {
+                    "uri": "file://README.md"
+                }
+            },
+            'prompts-list': {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "prompts/list"
+            },
+            'logging-setlevel': {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "logging/setLevel",
+                "params": {
+                    "level": "debug"
+                }
+            }
+        };
+
+        function loadTemplate() {
+            const select = document.getElementById('requestTemplate');
+            const template = templates[select.value];
+            if (template) {
+                // Update ID for templates that have one
+                if (template.id) {
+                    template.id = requestId++;
+                }
+                document.getElementById('requestBody').value = JSON.stringify(template, null, 2);
+            }
+        }
+
+        function connect() {
+            const url = document.getElementById('serverUrl').value;
+            
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(url);
+            
+            eventSource.onopen = function() {
+                updateStatus(true);
+                log('Connected to SSE endpoint', 'system');
+            };
+
+            eventSource.onmessage = function(event) {
+                log('SSE Message: ' + event.data, 'received');
+            };
+
+            eventSource.onerror = function(error) {
+                log('SSE Error: Connection failed', 'error');
+                updateStatus(false);
+            };
+
+            // Listen for specific event types
+            eventSource.addEventListener('message', function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    log('Parsed SSE: ' + JSON.stringify(data, null, 2), 'received');
+                } catch (e) {
+                    // Not JSON, just log as-is
+                }
+            });
+        }
+
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                updateStatus(false);
+                log('Disconnected from SSE endpoint', 'system');
+            }
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'status connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                sendBtn.disabled = false;
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+            }
+        }
+
+        async function sendRequest() {
+            const body = document.getElementById('requestBody').value;
+            const url = document.getElementById('serverUrl').value;
+
+            try {
+                const request = JSON.parse(body);
+                log('Sending: ' + JSON.stringify(request, null, 2), 'sent');
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: body
+                });
+
+                const responseText = await response.text();
+                
+                if (response.ok) {
+                    try {
+                        const responseData = JSON.parse(responseText);
+                        log('Response: ' + JSON.stringify(responseData, null, 2), 'received');
+                    } catch (e) {
+                        log('Response: ' + responseText, 'received');
+                    }
+                } else {
+                    log('Error ' + response.status + ': ' + responseText, 'error');
+                }
+            } catch (error) {
+                log('Error: ' + error.message, 'error');
+            }
+        }
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message.replace(/\n/g, '<br>')}`;
+            
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // Handle Enter key in textarea
+        document.getElementById('requestBody').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                sendRequest();
+            }
+        });
+    </script>
+</body>
+</html>

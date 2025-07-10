@@ -1,0 +1,209 @@
+using Microsoft.AspNetCore.Http;
+using Serilog;
+using Serilog.Events;
+using McpServer.Abstractions;
+using McpServer.Application.Server;
+using McpServer.Domain.Tools;
+using McpServer.Domain.Resources;
+using McpServer.Infrastructure.Transport;
+using System.Globalization;
+
+// Define allowed HTTP methods for SSE endpoint
+var sseAllowedMethods = new[] { "GET", "POST", "OPTIONS" };
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+        formatProvider: CultureInfo.InvariantCulture)
+    .WriteTo.File(
+        "logs/mcpserver-web-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 7,
+        formatProvider: CultureInfo.InvariantCulture)
+    .CreateLogger();
+
+try
+{
+    Log.Information("Starting MCP Server Web Host");
+    
+    var builder = WebApplication.CreateBuilder(args);
+    
+    // Configure Kestrel to use specific port
+    builder.WebHost.UseUrls("http://localhost:5080");
+    
+    // Add Serilog
+    builder.Host.UseSerilog();
+    
+    Log.Information("Configuring services...");
+    
+    // Add services
+    builder.Services.AddMcpServer();
+    builder.Services.AddMcpTools();
+    builder.Services.AddMcpResources();
+    builder.Services.ConfigureMcpServer(builder.Configuration);
+    
+    // Add Swagger
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+    
+    // Add CORS
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("McpCors", policy =>
+        {
+            if (builder.Environment.IsDevelopment())
+            {
+                // In development, allow any origin for testing with Postman and browsers
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
+            else
+            {
+                // In production, use configured origins
+                var allowedOrigins = builder.Configuration.GetSection("McpServer:Transport:Sse:AllowedOrigins")
+                    .Get<string[]>() ?? Array.Empty<string>();
+                    
+                if (allowedOrigins.Length > 0)
+                {
+                    policy.WithOrigins(allowedOrigins)
+                          .AllowAnyMethod()
+                          .AllowAnyHeader()
+                          .AllowCredentials();
+                }
+            }
+        });
+    });
+    
+    Log.Information("Building application...");
+    var app = builder.Build();
+    Log.Information("Application built successfully");
+    
+    // Configure pipeline
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI();
+    }
+    
+    app.UseCors("McpCors");
+    
+    // Skip tool registration for now - we'll do it lazily
+    Log.Information("Skipping tool registration during startup");
+    
+    // Map endpoints
+    app.MapGet("/", () => Results.Ok(new
+    {
+        name = "MCP Server",
+        version = "1.0.0",
+        endpoints = new
+        {
+            sse = "/sse",
+            health = "/health",
+            swagger = app.Environment.IsDevelopment() ? "/swagger" : null
+        }
+    }));
+    
+    app.MapGet("/health", () => Results.Ok(new
+    {
+        status = "healthy",
+        timestamp = DateTimeOffset.UtcNow,
+        services = new
+        {
+            mcpServer = "running",
+            sseTransport = "available"
+        }
+    }));
+    
+    // Handle both GET and POST for SSE endpoint
+    app.MapMethods("/sse", sseAllowedMethods, async (HttpContext context) =>
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        
+        logger.LogInformation("SSE endpoint hit: Method={Method}, Path={Path}, Headers={Headers}", 
+            context.Request.Method, 
+            context.Request.Path,
+            string.Join(", ", context.Request.Headers.Select(h => $"{h.Key}={h.Value}")));
+        
+        // Handle preflight OPTIONS request
+        if (context.Request.Method == "OPTIONS")
+        {
+            context.Response.StatusCode = 200;
+            return;
+        }
+        
+        // For GET requests, establish SSE connection
+        if (context.Request.Method == "GET")
+        {
+            context.Response.ContentType = "text/event-stream";
+            context.Response.Headers["Cache-Control"] = "no-cache";
+            context.Response.Headers["Connection"] = "keep-alive";
+            
+            await context.Response.WriteAsync("data: SSE connection established\n\n");
+            await context.Response.Body.FlushAsync();
+            
+            // Keep connection alive
+            while (!context.RequestAborted.IsCancellationRequested)
+            {
+                await Task.Delay(30000, context.RequestAborted);
+                await context.Response.WriteAsync(": ping\n\n");
+                await context.Response.Body.FlushAsync();
+            }
+            return;
+        }
+        
+        // For POST requests, handle as JSON-RPC
+        if (context.Request.Method == "POST")
+        {
+            try
+            {
+                var mcpServer = context.RequestServices.GetRequiredService<IMcpServer>();
+                var sseTransport = context.RequestServices.GetRequiredService<SseTransport>();
+                
+                // Register tools and resources on first request (lazy initialization)
+                var tools = context.RequestServices.GetServices<ITool>();
+                var resourceProviders = context.RequestServices.GetServices<IResourceProvider>();
+                
+                foreach (var tool in tools)
+                {
+                    mcpServer.RegisterTool(tool);
+                }
+                
+                foreach (var provider in resourceProviders)
+                {
+                    mcpServer.RegisterResourceProvider(provider);
+                }
+                
+                await sseTransport.HandleConnectionAsync(context, context.RequestAborted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error handling SSE connection");
+                context.Response.StatusCode = 500;
+                await context.Response.WriteAsync($"Error: {ex.Message}");
+            }
+            return;
+        }
+        
+        // Method not allowed
+        context.Response.StatusCode = 405;
+        await context.Response.WriteAsync("Method not allowed");
+    });
+    
+    Log.Information("Starting application on http://localhost:5080");
+    app.Run();
+    Log.Information("Application stopped");
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Host terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
