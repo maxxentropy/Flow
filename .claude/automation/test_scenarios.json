@@ -1,0 +1,370 @@
+{
+  "unit_test_scenarios": {
+    "happy_path": {
+      "description": "Standard successful operation",
+      "template": {
+        "arrange": "Create valid input with all required fields",
+        "act": "Execute the method under test",
+        "assert": "Verify expected output and state changes"
+      },
+      "example": {
+        "test_name": "ExecuteAsync_ValidInput_ReturnsSuccess",
+        "input": "new ToolRequest { Name = 'test', Arguments = validArgs }",
+        "expected": "result.Success == true && result.Content != null"
+      }
+    },
+    
+    "null_input": {
+      "description": "Null parameter handling",
+      "template": {
+        "arrange": "Set input parameter to null",
+        "act": "Execute method expecting ArgumentNullException",
+        "assert": "Verify exception type and parameter name"
+      },
+      "variations": [
+        "Null request object",
+        "Null required property",
+        "Null collection item"
+      ]
+    },
+    
+    "boundary_conditions": {
+      "description": "Edge case values",
+      "test_cases": [
+        {
+          "name": "Empty string",
+          "values": ["\"\"", "\" \"", "string.Empty"]
+        },
+        {
+          "name": "Numeric boundaries",
+          "values": ["0", "-1", "int.MaxValue", "int.MinValue"]
+        },
+        {
+          "name": "Collection boundaries",
+          "values": ["empty list", "single item", "max items"]
+        }
+      ]
+    },
+    
+    "error_conditions": {
+      "description": "Expected failure scenarios",
+      "scenarios": [
+        {
+          "name": "Invalid input",
+          "setup": "Create input violating business rules",
+          "expected_error": "Specific validation exception"
+        },
+        {
+          "name": "Dependency failure",
+          "setup": "Mock dependency to throw exception",
+          "expected_error": "Wrapped or propagated exception"
+        },
+        {
+          "name": "Timeout",
+          "setup": "Use cancellation token that's already cancelled",
+          "expected_error": "OperationCanceledException"
+        }
+      ]
+    },
+    
+    "concurrency": {
+      "description": "Thread safety and race conditions",
+      "patterns": [
+        {
+          "name": "Parallel execution",
+          "code": "Task.WhenAll(Enumerable.Range(0, 10).Select(_ => TestMethod()))"
+        },
+        {
+          "name": "Concurrent access",
+          "code": "Parallel.ForEach(items, item => TestMethod(item))"
+        }
+      ]
+    }
+  },
+  
+  "integration_test_scenarios": {
+    "transport_tests": {
+      "stdio": [
+        {
+          "name": "Message round trip",
+          "steps": [
+            "Write JSON-RPC request to stdin",
+            "Read response from stdout",
+            "Verify response format and content"
+          ]
+        },
+        {
+          "name": "Multiple concurrent messages",
+          "steps": [
+            "Send 10 requests rapidly",
+            "Verify all responses received",
+            "Check response ordering"
+          ]
+        }
+      ],
+      "sse": [
+        {
+          "name": "Connection establishment",
+          "steps": [
+            "POST to SSE endpoint",
+            "Verify Content-Type header",
+            "Check for keep-alive messages"
+          ]
+        },
+        {
+          "name": "Reconnection handling",
+          "steps": [
+            "Establish connection",
+            "Force disconnect",
+            "Verify client can reconnect"
+          ]
+        }
+      ]
+    },
+    
+    "protocol_compliance": {
+      "json_rpc": [
+        {
+          "name": "Valid request",
+          "request": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "test",
+            "params": {}
+          },
+          "validate": [
+            "Response has matching id",
+            "Response has jsonrpc='2.0'",
+            "Response has result OR error"
+          ]
+        },
+        {
+          "name": "Batch requests",
+          "request": [
+            {"jsonrpc": "2.0", "id": 1, "method": "test1"},
+            {"jsonrpc": "2.0", "id": 2, "method": "test2"}
+          ],
+          "validate": [
+            "Response is array",
+            "Each response has correct id",
+            "Order may differ"
+          ]
+        }
+      ],
+      "mcp_specific": [
+        {
+          "name": "Initialization sequence",
+          "steps": [
+            "Send initialize request",
+            "Verify server capabilities",
+            "Send initialized notification",
+            "Verify server ready"
+          ]
+        },
+        {
+          "name": "Tool discovery",
+          "steps": [
+            "Initialize connection",
+            "Request tools/list",
+            "Verify tool schemas",
+            "Call each tool with valid params"
+          ]
+        }
+      ]
+    },
+    
+    "error_handling": {
+      "protocol_errors": [
+        {
+          "name": "Invalid JSON",
+          "input": "{invalid json}",
+          "expected": {
+            "error": {
+              "code": -32700,
+              "message": "Parse error"
+            }
+          }
+        },
+        {
+          "name": "Method not found",
+          "input": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "unknown_method"
+          },
+          "expected": {
+            "error": {
+              "code": -32601,
+              "message": "Method not found"
+            }
+          }
+        }
+      ],
+      "application_errors": [
+        {
+          "name": "Tool not found",
+          "method": "tools/call",
+          "params": {"name": "non_existent"},
+          "expected_code": -32002
+        },
+        {
+          "name": "Resource access denied",
+          "method": "resources/read",
+          "params": {"uri": "file:///etc/passwd"},
+          "expected_code": -32004
+        }
+      ]
+    }
+  },
+  
+  "performance_test_scenarios": {
+    "load_patterns": [
+      {
+        "name": "Steady load",
+        "description": "Constant request rate",
+        "parameters": {
+          "duration": "5m",
+          "rps": 100,
+          "concurrent_users": 10
+        }
+      },
+      {
+        "name": "Spike test",
+        "description": "Sudden traffic increase",
+        "parameters": {
+          "normal_rps": 50,
+          "spike_rps": 500,
+          "spike_duration": "30s"
+        }
+      },
+      {
+        "name": "Ramp up/down",
+        "description": "Gradual increase and decrease",
+        "stages": [
+          {"duration": "1m", "target": 50},
+          {"duration": "2m", "target": 200},
+          {"duration": "1m", "target": 50},
+          {"duration": "1m", "target": 0}
+        ]
+      }
+    ],
+    
+    "stress_scenarios": [
+      {
+        "name": "Connection limit",
+        "description": "Test maximum concurrent connections",
+        "approach": "Gradually increase connections until failure"
+      },
+      {
+        "name": "Message size limit",
+        "description": "Test large message handling",
+        "sizes": ["1KB", "100KB", "1MB", "10MB"]
+      },
+      {
+        "name": "Memory pressure",
+        "description": "Test under memory constraints",
+        "approach": "Limit container memory and monitor behavior"
+      }
+    ]
+  },
+  
+  "security_test_scenarios": {
+    "input_validation": [
+      {
+        "name": "SQL injection",
+        "payloads": [
+          "'; DROP TABLE users; --",
+          "1' OR '1'='1",
+          "admin'--"
+        ]
+      },
+      {
+        "name": "Path traversal",
+        "payloads": [
+          "../../../etc/passwd",
+          "..\\..\\..\\windows\\system32\\config\\sam",
+          "%2e%2e%2f%2e%2e%2f"
+        ]
+      },
+      {
+        "name": "Command injection",
+        "payloads": [
+          "; ls -la",
+          "| whoami",
+          "$(cat /etc/passwd)"
+        ]
+      }
+    ],
+    
+    "authentication": [
+      {
+        "name": "Missing credentials",
+        "test": "Request without auth header"
+      },
+      {
+        "name": "Invalid credentials",
+        "test": "Request with wrong API key"
+      },
+      {
+        "name": "Expired token",
+        "test": "Request with expired JWT"
+      }
+    ],
+    
+    "dos_prevention": [
+      {
+        "name": "Rate limiting",
+        "test": "Send 1000 requests from single IP"
+      },
+      {
+        "name": "Resource exhaustion",
+        "test": "Request expensive operations repeatedly"
+      }
+    ]
+  },
+  
+  "test_data_generators": {
+    "valid_requests": {
+      "initialize": {
+        "jsonrpc": "2.0",
+        "id": "${random.int}",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "${random.choice(['TestClient', 'AutoTest', 'CI'])}",
+            "version": "${random.version}"
+          }
+        }
+      },
+      "tool_call": {
+        "jsonrpc": "2.0",
+        "id": "${random.int}",
+        "method": "tools/call",
+        "params": {
+          "name": "${existing.tool.name}",
+          "arguments": "${tool.valid.args}"
+        }
+      }
+    },
+    
+    "invalid_requests": {
+      "malformed": [
+        "{not valid json}",
+        "{'single': 'quotes'}",
+        "{\"incomplete\": "
+      ],
+      "missing_fields": [
+        "{}",
+        "{\"jsonrpc\": \"2.0\"}",
+        "{\"id\": 1, \"method\": \"test\"}"
+      ],
+      "wrong_types": [
+        "{\"jsonrpc\": 2.0, \"id\": \"1\", \"method\": \"test\"}",
+        "{\"jsonrpc\": \"2.0\", \"id\": {}, \"method\": \"test\"}",
+        "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": 123}"
+      ]
+    }
+  }
+}

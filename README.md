@@ -256,3 +256,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Contributing
 
 Contributions are welcome! Please follow the existing code style and architecture patterns.
+
+## Claude AI Development Integration
+
+This project includes comprehensive Claude AI optimization for accelerated development:
+
+- **CLAUDE.md**: Project-specific instructions and architectural guidelines
+- **CLAUDE_USAGE_GUIDE.md**: Comprehensive guide for effective Claude usage
+- **.clinerules**: General development standards and practices
+- **.claude/**: Extended patterns, templates, and examples
+
+See [CLAUDE_USAGE_GUIDE.md](CLAUDE_USAGE_GUIDE.md) for detailed instructions on leveraging Claude AI for development.

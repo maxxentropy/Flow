@@ -1,0 +1,167 @@
+{
+  "architecture_review": {
+    "prompts": [
+      "Does this change maintain Clean Architecture boundaries?",
+      "Are dependencies flowing in the correct direction (inward)?",
+      "Is the Domain layer free from external dependencies?",
+      "Are interfaces properly segregated?",
+      "Does this follow SOLID principles?"
+    ],
+    "red_flags": [
+      "Domain references Infrastructure",
+      "Application references Presentation",
+      "Concrete types in interfaces",
+      "Multiple responsibilities in single class",
+      "Breaking changes to public APIs"
+    ]
+  },
+  
+  "security_review": {
+    "prompts": [
+      "Are all inputs validated and sanitized?",
+      "Is sensitive data properly protected?",
+      "Are there any SQL injection risks?",
+      "Is authentication/authorization implemented correctly?",
+      "Are errors handled without exposing internals?"
+    ],
+    "patterns_to_check": [
+      "String concatenation in queries",
+      "Hardcoded credentials",
+      "Unsafe deserialization",
+      "Missing input validation",
+      "Verbose error messages"
+    ]
+  },
+  
+  "performance_review": {
+    "prompts": [
+      "Are async operations properly implemented?",
+      "Is ConfigureAwait(false) used in library code?",
+      "Are there any blocking calls (.Result, .Wait())?",
+      "Is memory efficiently managed (pooling, disposal)?",
+      "Are there any N+1 query problems?"
+    ],
+    "anti_patterns": [
+      "async void (except event handlers)",
+      "Task.Run in ASP.NET Core",
+      "Synchronous I/O in async context",
+      "Large object allocations in loops",
+      "Missing disposal of IDisposable"
+    ]
+  },
+  
+  "mcp_protocol_review": {
+    "prompts": [
+      "Does this follow JSON-RPC 2.0 specification?",
+      "Are error codes using correct MCP ranges?",
+      "Is backward compatibility maintained?",
+      "Are all required fields present in messages?",
+      "Is transport abstraction maintained?"
+    ],
+    "validation_checks": [
+      "jsonrpc field equals '2.0'",
+      "id field present for requests",
+      "method names follow convention",
+      "error codes in correct range",
+      "params validation implemented"
+    ]
+  },
+  
+  "testing_review": {
+    "prompts": [
+      "Are there unit tests for new functionality?",
+      "Do tests follow AAA pattern?",
+      "Are edge cases covered?",
+      "Is test coverage maintained or improved?",
+      "Are tests independent and repeatable?"
+    ],
+    "test_quality_checks": [
+      "No test interdependencies",
+      "Meaningful test names",
+      "Proper mocking usage",
+      "Both positive and negative cases",
+      "Performance characteristics tested"
+    ]
+  },
+  
+  "code_quality_review": {
+    "prompts": [
+      "Is the code self-documenting?",
+      "Are names clear and meaningful?",
+      "Is complexity reasonable (<10)?",
+      "Are there magic numbers that need constants?",
+      "Is error handling comprehensive?"
+    ],
+    "refactoring_opportunities": [
+      "Methods > 50 lines",
+      "Classes > 500 lines",
+      "Nested conditionals > 3 levels",
+      "Duplicate code blocks",
+      "Complex boolean expressions"
+    ]
+  },
+  
+  "documentation_review": {
+    "prompts": [
+      "Are public APIs documented with XML comments?",
+      "Is the README updated if needed?",
+      "Are breaking changes documented?",
+      "Are configuration options explained?",
+      "Are examples provided for complex features?"
+    ],
+    "required_docs": [
+      "XML comments on public methods",
+      "Parameter descriptions",
+      "Return value documentation",
+      "Exception documentation",
+      "Usage examples for tools"
+    ]
+  },
+  
+  "automated_checks": {
+    "commands": [
+      {
+        "name": "Build verification",
+        "command": "dotnet build --no-restore",
+        "expected": "Build succeeded"
+      },
+      {
+        "name": "Test execution",
+        "command": "dotnet test --no-build",
+        "expected": "all tests passed"
+      },
+      {
+        "name": "Code analysis",
+        "command": "dotnet format --verify-no-changes",
+        "expected": "Format succeeded"
+      },
+      {
+        "name": "Security scan",
+        "command": "dotnet list package --vulnerable",
+        "expected": "no vulnerable packages"
+      }
+    ]
+  },
+  
+  "review_checklist_template": {
+    "general": [
+      "[ ] Code compiles without warnings",
+      "[ ] All tests pass",
+      "[ ] No obvious bugs or issues",
+      "[ ] Follows project coding standards",
+      "[ ] Performance impact considered"
+    ],
+    "specific": [
+      "[ ] Clean Architecture maintained",
+      "[ ] MCP protocol compliance verified",
+      "[ ] Security considerations addressed",
+      "[ ] Error handling is appropriate",
+      "[ ] Documentation is updated"
+    ],
+    "final": [
+      "[ ] Ready for production",
+      "[ ] No blocking issues",
+      "[ ] Approved by: @reviewer"
+    ]
+  }
+}

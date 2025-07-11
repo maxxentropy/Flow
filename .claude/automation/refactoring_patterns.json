@@ -1,0 +1,300 @@
+{
+  "refactoring_catalog": {
+    "extract_method": {
+      "when_to_apply": [
+        "Method > 50 lines",
+        "Duplicate code blocks",
+        "Complex conditional logic",
+        "Multiple levels of abstraction"
+      ],
+      "pattern": {
+        "before": "public void ProcessOrder(Order order) { /* 100 lines */ }",
+        "after": [
+          "public void ProcessOrder(Order order) {",
+          "    ValidateOrder(order);",
+          "    CalculatePricing(order);",
+          "    ApplyDiscounts(order);",
+          "    FinalizeOrder(order);",
+          "}"
+        ]
+      },
+      "safety_checks": [
+        "Extract one method at a time",
+        "Run tests after each extraction",
+        "Preserve original behavior exactly",
+        "Check for variable dependencies"
+      ]
+    },
+    
+    "extract_interface": {
+      "when_to_apply": [
+        "Multiple implementations needed",
+        "Tight coupling to concrete class",
+        "Testing requires mocking",
+        "Future extensibility needed"
+      ],
+      "pattern": {
+        "before": "public class EmailService { }",
+        "after": [
+          "public interface IEmailService { }",
+          "public class SmtpEmailService : IEmailService { }"
+        ]
+      },
+      "steps": [
+        "Create interface with public methods",
+        "Make class implement interface",
+        "Update all usages to use interface",
+        "Update DI registration"
+      ]
+    },
+    
+    "replace_conditionals_with_polymorphism": {
+      "when_to_apply": [
+        "Switch on type/enum",
+        "If-else chains for behavior",
+        "Type checking with casting"
+      ],
+      "pattern": {
+        "before": [
+          "switch (tool.Type) {",
+          "    case ToolType.File: // file logic",
+          "    case ToolType.Http: // http logic",
+          "}"
+        ],
+        "after": [
+          "public abstract class Tool {",
+          "    public abstract Task<Result> ExecuteAsync();",
+          "}",
+          "public class FileTool : Tool { }",
+          "public class HttpTool : Tool { }"
+        ]
+      }
+    },
+    
+    "introduce_parameter_object": {
+      "when_to_apply": [
+        "Method has > 3 parameters",
+        "Parameters often passed together",
+        "Parameters represent a concept"
+      ],
+      "pattern": {
+        "before": "ProcessTool(string name, Dictionary<string,object> args, string user, string correlationId, TimeSpan timeout)",
+        "after": [
+          "public record ToolContext(string Name, Dictionary<string,object> Args, string User, string CorrelationId, TimeSpan Timeout);",
+          "ProcessTool(ToolContext context)"
+        ]
+      }
+    },
+    
+    "extract_class": {
+      "when_to_apply": [
+        "Class > 500 lines",
+        "Multiple responsibilities",
+        "Feature envy",
+        "Data clumps"
+      ],
+      "pattern": {
+        "before": "public class McpServer { /* handles everything */ }",
+        "after": [
+          "public class McpServer { }",
+          "public class MessageProcessor { }",
+          "public class ConnectionManager { }",
+          "public class ToolExecutor { }"
+        ]
+      },
+      "process": [
+        "Identify cohesive methods/fields",
+        "Create new class",
+        "Move related members",
+        "Create association",
+        "Update tests"
+      ]
+    }
+  },
+  
+  "code_smells_detection": {
+    "long_method": {
+      "metrics": {
+        "lines": "> 50",
+        "cyclomatic_complexity": "> 10",
+        "parameters": "> 5"
+      },
+      "detection_query": "grep -n '^[[:space:]]*{' *.cs | awk -F: 'NR>1{print $1, $2-prev} {prev=$2}' | sort -k2 -nr | head -20"
+    },
+    
+    "large_class": {
+      "metrics": {
+        "lines": "> 500",
+        "methods": "> 20",
+        "fields": "> 15"
+      },
+      "detection_query": "find . -name '*.cs' -exec wc -l {} + | sort -nr | head -20"
+    },
+    
+    "duplicate_code": {
+      "tool": "dotnet-duplicates",
+      "threshold": "10 lines",
+      "action": "Extract to shared method or base class"
+    },
+    
+    "feature_envy": {
+      "symptoms": [
+        "Method uses another class's data extensively",
+        "Method calls multiple methods on same object",
+        "Method seems to belong elsewhere"
+      ],
+      "fix": "Move method to the class it envies"
+    },
+    
+    "data_clumps": {
+      "symptoms": [
+        "Same parameters passed together",
+        "Related fields in multiple classes",
+        "Repeated parameter lists"
+      ],
+      "fix": "Extract parameter object or value object"
+    }
+  },
+  
+  "safe_refactoring_steps": {
+    "preparation": [
+      "Ensure all tests pass",
+      "Commit current state",
+      "Create feature branch",
+      "Document intended changes"
+    ],
+    
+    "execution": {
+      "method": [
+        {
+          "step": 1,
+          "action": "Make the change",
+          "verify": "Code compiles"
+        },
+        {
+          "step": 2,
+          "action": "Run affected unit tests",
+          "verify": "Tests pass"
+        },
+        {
+          "step": 3,
+          "action": "Run integration tests",
+          "verify": "No regressions"
+        },
+        {
+          "step": 4,
+          "action": "Commit with descriptive message",
+          "verify": "Git history clear"
+        }
+      ]
+    },
+    
+    "validation": [
+      "Run full test suite",
+      "Check code coverage maintained",
+      "Performance benchmarks",
+      "Manual testing if needed"
+    ]
+  },
+  
+  "automated_refactoring_tools": {
+    "ide_refactorings": {
+      "safe": [
+        "Rename (Ctrl+R, R)",
+        "Extract Method (Ctrl+R, M)",
+        "Extract Interface (Ctrl+R, I)",
+        "Move Type to File",
+        "Convert to Auto-Property"
+      ],
+      "careful": [
+        "Change Signature",
+        "Pull Members Up",
+        "Push Members Down",
+        "Extract Base Class"
+      ]
+    },
+    
+    "command_line_tools": [
+      {
+        "tool": "dotnet-format",
+        "usage": "dotnet format --include src/",
+        "purpose": "Code style consistency"
+      },
+      {
+        "tool": "dotnet-cleanup",
+        "usage": "dotnet cleanup --profile=full",
+        "purpose": "Remove unused code"
+      }
+    ]
+  },
+  
+  "refactoring_priorities": {
+    "high_impact": [
+      {
+        "smell": "Duplicate code",
+        "impact": "Reduces maintenance burden",
+        "effort": "Medium",
+        "risk": "Low"
+      },
+      {
+        "smell": "Long methods",
+        "impact": "Improves readability",
+        "effort": "Low",
+        "risk": "Low"
+      }
+    ],
+    
+    "medium_impact": [
+      {
+        "smell": "Large classes",
+        "impact": "Better separation of concerns",
+        "effort": "High",
+        "risk": "Medium"
+      },
+      {
+        "smell": "Complex conditionals",
+        "impact": "Easier to understand",
+        "effort": "Medium",
+        "risk": "Low"
+      }
+    ],
+    
+    "low_impact": [
+      {
+        "smell": "Comments explaining code",
+        "impact": "Self-documenting code",
+        "effort": "Low",
+        "risk": "Low"
+      }
+    ]
+  },
+  
+  "mcp_specific_refactorings": {
+    "transport_abstraction": {
+      "problem": "Transport-specific code in handlers",
+      "solution": "Extract transport interface",
+      "pattern": {
+        "interface": "ITransport",
+        "implementations": ["StdioTransport", "SseTransport", "WebSocketTransport"],
+        "factory": "TransportFactory"
+      }
+    },
+    
+    "message_processing_pipeline": {
+      "problem": "Monolithic message processing",
+      "solution": "Chain of responsibility",
+      "components": [
+        "ValidationMiddleware",
+        "AuthenticationMiddleware",
+        "LoggingMiddleware",
+        "HandlerMiddleware"
+      ]
+    },
+    
+    "tool_registration": {
+      "problem": "Manual tool registration",
+      "solution": "Convention-based discovery",
+      "implementation": "Scan assemblies for ITool implementations"
+    }
+  }
+}
