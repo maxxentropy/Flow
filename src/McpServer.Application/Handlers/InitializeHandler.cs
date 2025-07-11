@@ -4,6 +4,7 @@ using McpServer.Application.Server;
 using McpServer.Application.Services;
 using McpServer.Application.Tracing;
 using McpServer.Domain.Exceptions;
+using McpServer.Domain.Protocol;
 using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Protocol.Messages;
 using McpServer.Domain.Services;
@@ -19,6 +20,7 @@ public class InitializeHandler : IMessageHandler
 {
     private readonly ILogger<InitializeHandler> _logger;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IProtocolVersionNegotiator _versionNegotiator;
     private IMcpServer? _server;
 
     /// <summary>
@@ -26,10 +28,15 @@ public class InitializeHandler : IMessageHandler
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="serviceProvider">The service provider.</param>
-    public InitializeHandler(ILogger<InitializeHandler> logger, IServiceProvider serviceProvider)
+    /// <param name="versionNegotiator">The protocol version negotiator.</param>
+    public InitializeHandler(
+        ILogger<InitializeHandler> logger, 
+        IServiceProvider serviceProvider,
+        IProtocolVersionNegotiator versionNegotiator)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
+        _versionNegotiator = versionNegotiator;
     }
 
     /// <inheritdoc/>
@@ -66,16 +73,21 @@ public class InitializeHandler : IMessageHandler
             // Lazily get the server instance
             _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
 
-            // Check if already initialized
-            if (_server.IsInitialized)
-            {
-                throw new ProtocolException("Server is already initialized");
-            }
+            // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
+            // The router prevents duplicate initialization requests per connection
 
-            // Validate protocol version
-            if (request.Params!.ProtocolVersion != "0.1.0")
+            // Negotiate protocol version
+            ProtocolVersion negotiatedVersion;
+            try
             {
-                throw new ProtocolException($"Unsupported protocol version: {request.Params.ProtocolVersion}");
+                negotiatedVersion = _versionNegotiator.NegotiateVersion(request.Params!.ProtocolVersion);
+                _logger.LogInformation("Protocol version negotiated: {NegotiatedVersion} (client requested: {ClientVersion})",
+                    negotiatedVersion, request.Params.ProtocolVersion);
+            }
+            catch (ProtocolVersionException ex)
+            {
+                _logger.LogWarning(ex, "Protocol version negotiation failed");
+                throw new ProtocolException(ex.Message);
             }
 
             // Update sampling service with client capabilities
@@ -85,16 +97,16 @@ public class InitializeHandler : IMessageHandler
                 samplingService.SetClientCapabilities(request.Params.Capabilities);
             }
 
-            // Build response
+            // Build response with negotiated version
             var response = new InitializeResponse
             {
-                ProtocolVersion = "0.1.0",
+                ProtocolVersion = negotiatedVersion.ToString(),
                 ServerInfo = _server.ServerInfo,
                 Capabilities = _server.Capabilities
             };
 
-            // Mark server as initialized
-            _server.SetInitialized(true);
+            // Note: Connection is marked as initialized by ConnectionAwareMessageRouter
+            // after successful completion of this handler
 
             _logger.LogInformation("Server initialized successfully");
 

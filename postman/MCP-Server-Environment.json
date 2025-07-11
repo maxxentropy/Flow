@@ -1,0 +1,67 @@
+{
+	"id": "12345678-1234-1234-1234-123456789def",
+	"name": "MCP Server Development",
+	"values": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:5080",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "wsUrl",
+			"value": "ws://localhost:5080/ws",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "sseEndpoint",
+			"value": "/sse",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "accessToken",
+			"value": "",
+			"type": "secret",
+			"enabled": true
+		},
+		{
+			"key": "sessionId",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "userId",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "correlationId",
+			"value": "",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "protocolVersion",
+			"value": "0.1.0",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "clientName",
+			"value": "Postman Test Client",
+			"type": "default",
+			"enabled": true
+		},
+		{
+			"key": "clientVersion",
+			"value": "1.0.0",
+			"type": "default",
+			"enabled": true
+		}
+	],
+	"_postman_variable_scope": "environment"
+}

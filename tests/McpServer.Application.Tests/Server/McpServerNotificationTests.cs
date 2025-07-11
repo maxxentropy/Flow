@@ -6,27 +6,32 @@ using McpServer.Domain.Transport;
 using McpServer.Domain.Tools;
 using McpServer.Domain.Resources;
 using McpServer.Domain.Prompts;
+using McpServer.Domain.Connection;
 using McpServer.Infrastructure.Tools;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
-using MServer = McpServer.Application.Server.McpServer;
+using MServer = McpServer.Application.Server.MultiplexingMcpServer;
 
 namespace McpServer.Application.Tests.Server;
 
 public class McpServerNotificationTests
 {
     private readonly Mock<ILogger<MServer>> _loggerMock;
-    private readonly Mock<IMessageRouter> _messageRouterMock;
+    private readonly Mock<IConnectionManager> _connectionManagerMock;
+    private readonly Mock<IConnectionAwareMessageRouter> _messageRouterMock;
     private readonly Mock<INotificationService> _notificationServiceMock;
+    private readonly Mock<ISamplingService> _samplingServiceMock;
     private readonly Mock<ITransport> _transportMock;
     private readonly MServer _server;
     
     public McpServerNotificationTests()
     {
         _loggerMock = new Mock<ILogger<MServer>>();
-        _messageRouterMock = new Mock<IMessageRouter>();
+        _connectionManagerMock = new Mock<IConnectionManager>();
+        _messageRouterMock = new Mock<IConnectionAwareMessageRouter>();
         _notificationServiceMock = new Mock<INotificationService>();
+        _samplingServiceMock = new Mock<ISamplingService>();
         _transportMock = new Mock<ITransport>();
         
         var serverInfo = new ServerInfo { Name = "Test Server", Version = "1.0.0" };
@@ -39,8 +44,10 @@ public class McpServerNotificationTests
         
         _server = new MServer(
             _loggerMock.Object,
+            _connectionManagerMock.Object,
             _messageRouterMock.Object,
             _notificationServiceMock.Object,
+            _samplingServiceMock.Object,
             serverInfo,
             capabilities);
     }
@@ -52,8 +59,10 @@ public class McpServerNotificationTests
         var realNotificationService = new NotificationService(Mock.Of<ILogger<NotificationService>>());
         var server = new MServer(
             _loggerMock.Object,
+            _connectionManagerMock.Object,
             _messageRouterMock.Object,
             realNotificationService,
+            _samplingServiceMock.Object,
             new ServerInfo { Name = "Test", Version = "1.0" },
             new ServerCapabilities());
         
@@ -113,8 +122,10 @@ public class McpServerNotificationTests
         };
         var server = new MServer(
             _loggerMock.Object,
+            _connectionManagerMock.Object,
             _messageRouterMock.Object,
             _notificationServiceMock.Object,
+            _samplingServiceMock.Object,
             new ServerInfo { Name = "Test", Version = "1.0" },
             capabilities);
         

@@ -5,16 +5,26 @@ using McpServer.Application.Server;
 using McpServer.Application.Handlers;
 using McpServer.Application.Services;
 using McpServer.Application.Middleware;
+using McpServer.Application.Tools;
 using McpServer.Domain.Services;
 using McpServer.Domain.Security;
 using McpServer.Domain.Tools;
 using McpServer.Domain.Resources;
 using McpServer.Domain.Prompts;
 using McpServer.Domain.Protocol.Messages;
+using McpServer.Domain.Validation;
+using McpServer.Domain.Protocol;
+using McpServer.Domain.Connection;
+using McpServer.Application.Connection;
 using McpServer.Infrastructure.Transport;
 using McpServer.Infrastructure.Tools;
 using McpServer.Infrastructure.Resources;
 using McpServer.Infrastructure.Security;
+using McpServer.Infrastructure.IO;
+using McpServer.Domain.IO;
+using McpServer.Application.Caching;
+using McpServer.Application.HighAvailability;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace McpServer.Abstractions;
 
@@ -39,13 +49,26 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRootRegistry, RootRegistry>();
         services.AddSingleton<ICompletionService, CompletionService>();
         services.AddSingleton<IAuthenticationService, AuthenticationService>();
+        services.AddSingleton<IHeartbeatService, HeartbeatService>();
+        services.AddSingleton<ICancellationManager, CancellationManager>();
+        services.AddSingleton<IProgressTracker, ProgressTracker>();
+        services.AddSingleton<IErrorResponseBuilder, ErrorResponseBuilder>();
         
-        services.AddSingleton(provider =>
+        // Validation services
+        services.AddSingleton<IValidationService, ValidationService>();
+        services.AddSingleton<ValidationMiddleware>();
+        services.AddSingleton<ValidatedToolFactory>();
+        
+        // Protocol version negotiation
+        services.AddSingleton<IProtocolVersionNegotiator, ProtocolVersionNegotiator>();
+        
+        // Connection management
+        services.AddSingleton<IConnectionManager, ConnectionManager>();
+        services.AddHostedService(provider => provider.GetRequiredService<IConnectionManager>() as ConnectionManager ?? throw new InvalidOperationException());
+        services.AddSingleton<IConnectionAwareMessageRouter, ConnectionAwareMessageRouter>();
+        
+        services.AddSingleton<IMcpServer>(provider =>
         {
-            var logger = provider.GetRequiredService<ILogger<Application.Server.McpServer>>();
-            var messageRouter = provider.GetRequiredService<IMessageRouter>();
-            var notificationService = provider.GetRequiredService<INotificationService>();
-            var samplingService = provider.GetRequiredService<ISamplingService>();
             var configuration = provider.GetRequiredService<IConfiguration>();
             
             var serverInfo = new ServerInfo
@@ -64,25 +87,44 @@ public static class ServiceCollectionExtensions
                 Completion = new CompletionCapability()
             };
             
-            return new Application.Server.McpServer(logger, messageRouter, notificationService, samplingService, serverInfo, capabilities);
+            // Always use MultiplexingMcpServer (supports both single and multiple connections)
+            var logger = provider.GetRequiredService<ILogger<MultiplexingMcpServer>>();
+            var connectionManager = provider.GetRequiredService<IConnectionManager>();
+            var connectionAwareRouter = provider.GetRequiredService<IConnectionAwareMessageRouter>();
+            var notificationService = provider.GetRequiredService<INotificationService>();
+            var samplingService = provider.GetService<ISamplingService>();
+            
+            return new MultiplexingMcpServer(logger, connectionManager, connectionAwareRouter, notificationService, samplingService, serverInfo, capabilities);
         });
         
         // Register the segregated interfaces
-        services.AddSingleton<IMcpServer>(provider => provider.GetRequiredService<Application.Server.McpServer>());
-        services.AddSingleton<IToolRegistry>(provider => provider.GetRequiredService<Application.Server.McpServer>());
-        services.AddSingleton<IResourceRegistry>(provider => provider.GetRequiredService<Application.Server.McpServer>());
-        services.AddSingleton<IPromptRegistry>(provider => provider.GetRequiredService<Application.Server.McpServer>());
+        services.AddSingleton<IToolRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IToolRegistry ?? throw new InvalidOperationException());
+        services.AddSingleton<IResourceRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IResourceRegistry ?? throw new InvalidOperationException());
+        services.AddSingleton<IPromptRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IPromptRegistry ?? throw new InvalidOperationException());
 
-        services.AddSingleton<IMessageRouter, MessageRouter>();
+        services.AddSingleton<IMessageRouter>(provider =>
+        {
+            var logger = provider.GetRequiredService<ILogger<MessageRouter>>();
+            var handlers = provider.GetServices<IMessageHandler>();
+            var progressTracker = provider.GetRequiredService<IProgressTracker>();
+            var errorResponseBuilder = provider.GetRequiredService<IErrorResponseBuilder>();
+            var validationMiddleware = provider.GetRequiredService<ValidationMiddleware>();
+            
+            return new MessageRouter(logger, handlers, progressTracker, errorResponseBuilder, validationMiddleware);
+        });
 
         // Message handlers
         services.AddSingleton<IMessageHandler, InitializeHandler>();
+        services.AddSingleton<IMessageHandler, InitializedHandler>();
+        services.AddSingleton<IMessageHandler, PingHandler>();
+        services.AddSingleton<IMessageHandler, CancelHandler>();
         services.AddSingleton<IMessageHandler, ToolsHandler>();
         services.AddSingleton<IMessageHandler, ResourcesHandler>();
         services.AddSingleton<IMessageHandler, PromptsHandler>();
         services.AddSingleton<IMessageHandler, LoggingHandler>();
         services.AddSingleton<IMessageHandler, RootsHandler>();
         services.AddSingleton<IMessageHandler, CompletionHandler>();
+        services.AddSingleton<IMessageHandler, SamplingHandler>();
 
         // Transport services
         services.AddSingleton<ITransportManager, TransportManager>();
@@ -119,6 +161,36 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuthenticationProvider, JwtAuthenticationProvider>();
         services.AddSingleton<IMessageMiddleware, AuthenticationMiddleware>();
         
+        // IO abstractions
+        services.AddSingleton<IFileSystem, FileSystem>();
+        
+        // Caching services
+        services.AddMemoryCache(); // Built-in ASP.NET Core memory cache
+        services.AddSingleton<ICacheService, MemoryCacheService>();
+        
+        // Cache configuration
+        services.Configure<ToolCacheOptions>(options => { });
+        services.Configure<ResourceCacheOptions>(options => { });
+        
+        // High availability services
+        services.AddSingleton<IHealthCheckService, McpServer.Application.HighAvailability.HealthCheckService>();
+        services.AddSingleton<ICircuitBreakerFactory, CircuitBreakerFactory>();
+        services.AddSingleton<IRetryPolicyFactory, RetryPolicyFactory>();
+        
+        // Load balancers
+        services.AddTransient<ILoadBalancer<object>, RoundRobinLoadBalancer<object>>();
+        services.AddTransient<ILoadBalancer<object>, PriorityLoadBalancer<object>>();
+        services.AddTransient<ILoadBalancer<object>, LeastConnectionsLoadBalancer<object>>();
+        
+        // Failover manager (registered as transient since it's generic)
+        services.AddTransient(typeof(IFailoverManager<>), typeof(FailoverManager<>));
+        
+        // High availability configuration
+        services.Configure<McpServer.Application.HighAvailability.HealthCheckServiceOptions>(options => { });
+        services.Configure<CircuitBreakerOptions>(options => { });
+        services.Configure<RetryPolicyOptions>(options => { });
+        services.Configure<FailoverOptions>(options => { });
+        
         // Configure authentication options
         services.Configure<ApiKeyAuthenticationOptions>(options => { });
         services.Configure<JwtAuthenticationOptions>(options => { });
@@ -142,6 +214,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, RootsDemoTool>();
         services.AddSingleton<ITool, CompletionDemoTool>();
         services.AddSingleton<ITool, AuthenticationDemoTool>();
+        services.AddSingleton<ITool, DataProcessingTool>();
         
         return services;
     }
@@ -154,12 +227,20 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMcpResources(this IServiceCollection services)
     {
         services.AddSingleton<IResourceProvider, FileSystemResourceProvider>();
+        services.AddSingleton<IResourceProvider, DatabaseSchemaResourceProvider>();
+        services.AddSingleton<IResourceProvider, RestApiResourceProvider>();
         
         services.Configure<FileSystemResourceOptions>(options =>
         {
             options.AllowedPaths = DefaultAllowedPaths;
             options.RecursiveSearch = true;
             options.ExcludePatterns = DefaultExcludePatterns;
+        });
+        
+        services.Configure<DatabaseSchemaResourceOptions>(options =>
+        {
+            options.Databases = new List<string> { "customers", "analytics" };
+            options.IncludeSystemTables = false;
         });
         
         return services;
@@ -184,6 +265,93 @@ public static class ServiceCollectionExtensions
         
         var fsSection = configuration.GetSection("McpServer:Resources:FileSystem");
         services.Configure<FileSystemResourceOptions>(options => fsSection.Bind(options));
+        
+        // Protocol version configuration
+        var versionSection = configuration.GetSection("McpServer:ProtocolVersion");
+        services.Configure<ProtocolVersionConfiguration>(options => versionSection.Bind(options));
+        
+        // Connection manager configuration
+        var connectionSection = configuration.GetSection("McpServer:ConnectionManager");
+        services.Configure<ConnectionManagerOptions>(options => connectionSection.Bind(options));
+        
+        // Cache configuration
+        var cacheSection = configuration.GetSection("McpServer:Cache");
+        services.Configure<MemoryCacheOptions>(options => cacheSection.GetSection("Memory").Bind(options));
+        services.Configure<ToolCacheOptions>(options => cacheSection.GetSection("Tools").Bind(options));
+        services.Configure<ResourceCacheOptions>(options => cacheSection.GetSection("Resources").Bind(options));
+        services.Configure<CacheWarmupOptions>(options => cacheSection.GetSection("Warmup").Bind(options));
+        
+        // High availability configuration
+        var haSection = configuration.GetSection("McpServer:HighAvailability");
+        services.Configure<McpServer.Application.HighAvailability.HealthCheckServiceOptions>(options => haSection.GetSection("HealthChecks").Bind(options));
+        services.Configure<CircuitBreakerOptions>(options => haSection.GetSection("CircuitBreaker").Bind(options));
+        services.Configure<RetryPolicyOptions>(options => haSection.GetSection("RetryPolicy").Bind(options));
+        services.Configure<FailoverOptions>(options => haSection.GetSection("Failover").Bind(options));
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds Redis distributed caching to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="connectionString">The Redis connection string.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddMcpRedisCache(this IServiceCollection services, string connectionString)
+    {
+        services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = connectionString;
+        });
+        
+        // Replace memory cache with distributed cache
+        services.AddSingleton<ICacheService, DistributedCacheService>();
+        services.Configure<DistributedCacheOptions>(options => { });
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds cache warming strategies to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddCacheWarming(this IServiceCollection services)
+    {
+        services.AddSingleton<ICacheWarmupService, CacheWarmupService>();
+        services.AddHostedService<CacheWarmupHostedService>();
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds comprehensive health checks to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddMcpHealthChecks(this IServiceCollection services)
+    {
+        services.AddHealthChecks()
+            .AddCheck<MemoryHealthCheck>("memory", tags: new[] { "system", "memory" })
+            .AddCheck<StartupHealthCheck>("startup", tags: new[] { "system", "startup" });
+        
+        return services;
+    }
+    
+    /// <summary>
+    /// Adds high availability features including circuit breakers, retry policies, and failover.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddHighAvailability(this IServiceCollection services)
+    {
+        services.AddSingleton<IHealthCheckService, McpServer.Application.HighAvailability.HealthCheckService>();
+        services.AddSingleton<ICircuitBreakerFactory, CircuitBreakerFactory>();
+        services.AddSingleton<IRetryPolicyFactory, RetryPolicyFactory>();
+        services.AddTransient(typeof(IFailoverManager<>), typeof(FailoverManager<>));
+        
+        // Add default load balancers
+        services.AddTransient<ILoadBalancer<object>, PriorityLoadBalancer<object>>();
         
         return services;
     }

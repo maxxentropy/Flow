@@ -10,6 +10,7 @@ public class McpException : Exception
     /// </summary>
     public McpException()
     {
+        ErrorCode = -32603; // Internal error by default
     }
 
     /// <summary>
@@ -18,6 +19,7 @@ public class McpException : Exception
     /// <param name="message">The error message.</param>
     public McpException(string message) : base(message)
     {
+        ErrorCode = -32603; // Internal error by default
     }
 
     /// <summary>
@@ -27,7 +29,32 @@ public class McpException : Exception
     /// <param name="innerException">The inner exception.</param>
     public McpException(string message, Exception innerException) : base(message, innerException)
     {
+        ErrorCode = -32603; // Internal error by default
     }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="McpException"/> class.
+    /// </summary>
+    /// <param name="errorCode">The MCP error code.</param>
+    /// <param name="message">The error message.</param>
+    /// <param name="data">Additional error data.</param>
+    /// <param name="innerException">The inner exception.</param>
+    public McpException(int errorCode, string message, object? data = null, Exception? innerException = null) 
+        : base(message, innerException)
+    {
+        ErrorCode = errorCode;
+        Data = data;
+    }
+
+    /// <summary>
+    /// Gets the MCP error code.
+    /// </summary>
+    public int ErrorCode { get; }
+
+    /// <summary>
+    /// Gets additional error data.
+    /// </summary>
+    public new object? Data { get; }
 }
 
 /// <summary>
@@ -39,7 +66,7 @@ public class ProtocolException : McpException
     /// Initializes a new instance of the <see cref="ProtocolException"/> class.
     /// </summary>
     /// <param name="message">The error message.</param>
-    public ProtocolException(string message) : base(message)
+    public ProtocolException(string message) : base(-32600, message)
     {
     }
 
@@ -48,42 +75,9 @@ public class ProtocolException : McpException
     /// </summary>
     /// <param name="message">The error message.</param>
     /// <param name="innerException">The inner exception.</param>
-    public ProtocolException(string message, Exception innerException) : base(message, innerException)
+    public ProtocolException(string message, Exception innerException) : base(-32600, message, null, innerException)
     {
     }
-}
-
-/// <summary>
-/// Exception thrown when a tool execution fails.
-/// </summary>
-public class ToolExecutionException : McpException
-{
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ToolExecutionException"/> class.
-    /// </summary>
-    /// <param name="toolName">The name of the tool that failed.</param>
-    /// <param name="message">The error message.</param>
-    public ToolExecutionException(string toolName, string message) : base($"Tool '{toolName}' execution failed: {message}")
-    {
-        ToolName = toolName;
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ToolExecutionException"/> class.
-    /// </summary>
-    /// <param name="toolName">The name of the tool that failed.</param>
-    /// <param name="message">The error message.</param>
-    /// <param name="innerException">The inner exception.</param>
-    public ToolExecutionException(string toolName, string message, Exception innerException) 
-        : base($"Tool '{toolName}' execution failed: {message}", innerException)
-    {
-        ToolName = toolName;
-    }
-
-    /// <summary>
-    /// Gets the name of the tool that failed.
-    /// </summary>
-    public string ToolName { get; }
 }
 
 /// <summary>
@@ -96,7 +90,7 @@ public class ResourceException : McpException
     /// </summary>
     /// <param name="uri">The URI of the resource.</param>
     /// <param name="message">The error message.</param>
-    public ResourceException(string uri, string message) : base($"Resource '{uri}' operation failed: {message}")
+    public ResourceException(string uri, string message) : base(-32200, $"Resource '{uri}' operation failed: {message}", new { uri })
     {
         Uri = uri;
     }
@@ -108,7 +102,7 @@ public class ResourceException : McpException
     /// <param name="message">The error message.</param>
     /// <param name="innerException">The inner exception.</param>
     public ResourceException(string uri, string message, Exception innerException) 
-        : base($"Resource '{uri}' operation failed: {message}", innerException)
+        : base(-32200, $"Resource '{uri}' operation failed: {message}", new { uri }, innerException)
     {
         Uri = uri;
     }
@@ -128,7 +122,7 @@ public class TransportException : McpException
     /// Initializes a new instance of the <see cref="TransportException"/> class.
     /// </summary>
     /// <param name="message">The error message.</param>
-    public TransportException(string message) : base(message)
+    public TransportException(string message) : base(-32751, message)
     {
     }
 
@@ -137,7 +131,7 @@ public class TransportException : McpException
     /// </summary>
     /// <param name="message">The error message.</param>
     /// <param name="innerException">The inner exception.</param>
-    public TransportException(string message, Exception innerException) : base(message, innerException)
+    public TransportException(string message, Exception innerException) : base(-32751, message, null, innerException)
     {
     }
 }

@@ -147,9 +147,7 @@ public class PromptsHandler : IMessageHandler
         _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
         _promptRegistry ??= _serviceProvider.GetRequiredService<IPromptRegistry>();
         
-        if (!_server.IsInitialized)
-        {
-            throw new ProtocolException("Server not initialized");
-        }
+        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
+        // No need to check server-level initialization as it's connection-specific
     }
 }

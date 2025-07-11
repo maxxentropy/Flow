@@ -63,6 +63,18 @@ public record PromptsUpdatedNotification : Notification
 }
 
 /// <summary>
+/// Notification sent when the client has been initialized.
+/// </summary>
+public record InitializedNotification : Notification
+{
+    /// <inheritdoc/>
+    public override string Method => "notifications/initialized";
+    
+    /// <inheritdoc/>
+    public override object? Params => null;
+}
+
+/// <summary>
 /// Parameters for progress notifications.
 /// </summary>
 public record ProgressNotificationParams
@@ -174,4 +186,112 @@ public record ResourceUpdatedParams
     /// </summary>
     [JsonPropertyName("uri")]
     public required string Uri { get; init; }
+}
+
+/// <summary>
+/// Ping request for connection health check.
+/// </summary>
+public record PingRequest
+{
+    /// <summary>
+    /// Gets the JSON-RPC version.
+    /// </summary>
+    [JsonPropertyName("jsonrpc")]
+    public string JsonRpc { get; } = "2.0";
+    
+    /// <summary>
+    /// Gets the method name.
+    /// </summary>
+    [JsonPropertyName("method")]
+    public string Method { get; } = "ping";
+    
+    /// <summary>
+    /// Gets the request ID.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public required object Id { get; init; }
+    
+    /// <summary>
+    /// Gets the ping timestamp.
+    /// </summary>
+    [JsonPropertyName("params")]
+    public PingParams? Params { get; init; }
+}
+
+/// <summary>
+/// Parameters for ping request.
+/// </summary>
+public record PingParams
+{
+    /// <summary>
+    /// Gets or sets the ping timestamp.
+    /// </summary>
+    [JsonPropertyName("timestamp")]
+    public long? Timestamp { get; init; }
+}
+
+/// <summary>
+/// Pong response for connection health check.
+/// </summary>
+public record PongResponse
+{
+    /// <summary>
+    /// Gets the response timestamp.
+    /// </summary>
+    [JsonPropertyName("timestamp")]
+    public required long Timestamp { get; init; }
+    
+    /// <summary>
+    /// Gets the original ping timestamp if provided.
+    /// </summary>
+    [JsonPropertyName("pingTimestamp")]
+    public long? PingTimestamp { get; init; }
+}
+
+/// <summary>
+/// Request to cancel an ongoing operation.
+/// </summary>
+public record CancelRequest
+{
+    /// <summary>
+    /// Gets the JSON-RPC version.
+    /// </summary>
+    [JsonPropertyName("jsonrpc")]
+    public string JsonRpc { get; } = "2.0";
+    
+    /// <summary>
+    /// Gets the method name.
+    /// </summary>
+    [JsonPropertyName("method")]
+    public string Method { get; } = "cancel";
+    
+    /// <summary>
+    /// Gets the request ID.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public required object Id { get; init; }
+    
+    /// <summary>
+    /// Gets the cancellation parameters.
+    /// </summary>
+    [JsonPropertyName("params")]
+    public required CancelParams Params { get; init; }
+}
+
+/// <summary>
+/// Parameters for cancel request.
+/// </summary>
+public record CancelParams
+{
+    /// <summary>
+    /// Gets or sets the ID of the request to cancel.
+    /// </summary>
+    [JsonPropertyName("requestId")]
+    public required object RequestId { get; init; }
+    
+    /// <summary>
+    /// Gets or sets the reason for cancellation.
+    /// </summary>
+    [JsonPropertyName("reason")]
+    public string? Reason { get; init; }
 }

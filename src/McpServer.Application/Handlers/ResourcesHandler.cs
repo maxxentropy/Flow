@@ -22,6 +22,7 @@ public class ResourcesHandler : IMessageHandler
     private readonly IServiceProvider _serviceProvider;
     private IMcpServer? _server;
     private IResourceRegistry? _resourceRegistry;
+    private INotificationService? _notificationService;
     private readonly Dictionary<string, HashSet<IResourceObserver>> _subscriptions = new();
 
     /// <summary>
@@ -170,8 +171,11 @@ public class ResourcesHandler : IMessageHandler
 
         _logger.LogInformation("Subscribing to resource: {Uri}", request.Uri);
 
+        // Get notification service if not already available
+        _notificationService ??= _serviceProvider.GetRequiredService<INotificationService>();
+
         // Create observer for this subscription
-        var observer = new ResourceObserver(request.Uri, _logger);
+        var observer = new ResourceObserver(request.Uri, _logger, _notificationService);
         
         // Add to subscriptions
         lock (_subscriptions)
@@ -288,28 +292,40 @@ public class ResourcesHandler : IMessageHandler
         _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
         _resourceRegistry ??= _serviceProvider.GetRequiredService<IResourceRegistry>();
         
-        if (!_server.IsInitialized)
-        {
-            throw new ProtocolException("Server not initialized");
-        }
+        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
+        // No need to check server-level initialization as it's connection-specific
     }
 
     private class ResourceObserver : IResourceObserver
     {
         private readonly string _uri;
         private readonly ILogger _logger;
+        private readonly INotificationService _notificationService;
+        private readonly string? _connectionId;
 
-        public ResourceObserver(string uri, ILogger logger)
+        public ResourceObserver(string uri, ILogger logger, INotificationService notificationService, string? connectionId = null)
         {
             _uri = uri;
             _logger = logger;
+            _notificationService = notificationService;
+            _connectionId = connectionId;
         }
 
-        public Task OnResourceUpdatedAsync(string uri, CancellationToken cancellationToken = default)
+        public async Task OnResourceUpdatedAsync(string uri, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Resource updated: {Uri}", uri);
-            // TODO: Send notification to client
-            return Task.CompletedTask;
+            
+            try
+            {
+                // Send resource update notification
+                await _notificationService.NotifyResourceUpdatedAsync(uri, cancellationToken);
+                
+                _logger.LogDebug("Sent resource update notification for {Uri}", uri);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send resource update notification for {Uri}", uri);
+            }
         }
     }
 }

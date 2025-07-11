@@ -85,6 +85,11 @@ public record ToolResult
     /// Gets whether the tool indicates the model should continue.
     /// </summary>
     public bool? IsError { get; init; }
+    
+    /// <summary>
+    /// Gets whether the tool execution was successful.
+    /// </summary>
+    public bool IsSuccess => !IsError.GetValueOrDefault();
 }
 
 /// <summary>

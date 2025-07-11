@@ -23,7 +23,11 @@ using System.Text.Json;
 using McpServer.Domain.Protocol;
 using McpServer.Domain.Protocol.Messages;
 using McpServer.Domain.Monitoring;
+using McpServer.Domain.Validation;
+using McpServer.Domain.Validation.FluentValidators;
+using McpServer.Domain.RateLimiting;
 using McpServer.Web.Extensions;
+using McpServer.Web.Middleware;
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -59,10 +63,21 @@ try
     // Instead, register services directly
     
     // Core services
-    builder.Services.AddSingleton<IMessageRouter, MessageRouter>();
+    builder.Services.AddSingleton<IMessageRouter>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<MessageRouter>>();
+        var handlers = provider.GetRequiredService<IEnumerable<IMessageHandler>>();
+        var progressTracker = provider.GetRequiredService<IProgressTracker>();
+        var errorResponseBuilder = provider.GetRequiredService<IErrorResponseBuilder>();
+        var validationMiddleware = provider.GetService<ValidationMiddleware>();
+        var rateLimitingMiddleware = provider.GetService<RateLimitingMiddleware>();
+        return new MessageRouter(logger, handlers, progressTracker, errorResponseBuilder, validationMiddleware, rateLimitingMiddleware);
+    });
     
     // Message handlers
     builder.Services.AddSingleton<IMessageHandler, InitializeHandler>();
+    builder.Services.AddSingleton<IMessageHandler, PingHandler>();
+    builder.Services.AddSingleton<IMessageHandler, CancelHandler>();
     builder.Services.AddSingleton<IMessageHandler, ToolsHandler>();
     builder.Services.AddSingleton<IMessageHandler, ResourcesHandler>();
     builder.Services.AddSingleton<IMessageHandler, PromptsHandler>();
@@ -107,47 +122,36 @@ try
     builder.Services.AddSingleton<IMetricsService, MetricsService>();
     builder.Services.AddSingleton<IHealthCheckService, HealthCheckService>();
     
+    // Add cancellation manager
+    builder.Services.AddSingleton<ICancellationManager, CancellationManager>();
+    
+    // Add progress tracker
+    builder.Services.AddSingleton<IProgressTracker, ProgressTracker>();
+    
+    // Add error response builder
+    builder.Services.AddSingleton<IErrorResponseBuilder, ErrorResponseBuilder>();
+    
+    // Add validation service
+    builder.Services.AddSingleton<IValidationService, ValidationService>();
+    builder.Services.AddSingleton<ValidationMiddleware>();
+    builder.Services.AddSingleton<ValidationPerformanceMonitor>();
+    
+    // Add rate limiting
+    builder.Services.AddSingleton<IRateLimiter, RateLimiter>();
+    builder.Services.AddSingleton<RateLimitingMiddleware>();
+    builder.Services.Configure<RateLimitConfiguration>(
+        builder.Configuration.GetSection("McpServer:RateLimiting"));
+    
+    // Add protocol version negotiation
+    builder.Services.AddSingleton<IProtocolVersionNegotiator, ProtocolVersionNegotiator>();
+    builder.Services.Configure<ProtocolVersionConfiguration>(
+        builder.Configuration.GetSection("McpServer:ProtocolVersion"));
+    
     // Add OpenTelemetry
     builder.Services.AddOpenTelemetryObservability(builder.Configuration);
     
-    // Add MCP Server with explicit dependencies
-    builder.Services.AddSingleton<McpServer.Application.Server.McpServer>(provider =>
-    {
-        Log.Information("Creating McpServer instance...");
-        var logger = provider.GetRequiredService<ILogger<McpServer.Application.Server.McpServer>>();
-        Log.Information("Got logger for McpServer");
-        var messageRouter = provider.GetRequiredService<IMessageRouter>();
-        Log.Information("Got message router");
-        var notificationService = provider.GetRequiredService<INotificationService>();
-        Log.Information("Got notification service");
-        var samplingService = provider.GetRequiredService<ISamplingService>();
-        Log.Information("Got sampling service");
-        
-        var serverInfo = new ServerInfo
-        {
-            Name = "MCP Server",
-            Version = "1.0.0"
-        };
-        
-        var capabilities = new ServerCapabilities
-        {
-            Tools = new ToolsCapability { ListChanged = true },
-            Resources = new ResourcesCapability { Subscribe = false, ListChanged = true },
-            Prompts = new PromptsCapability { ListChanged = true },
-            Logging = new LoggingCapability(),
-            Roots = new RootsCapability { ListChanged = true },
-            Completion = new CompletionCapability()
-        };
-        
-        Log.Information("Creating McpServer instance...");
-        return new McpServer.Application.Server.McpServer(logger, messageRouter, notificationService, samplingService, serverInfo, capabilities);
-    });
-    
-    // Register the same instance for all interfaces it implements
-    builder.Services.AddSingleton<IMcpServer>(provider => provider.GetRequiredService<McpServer.Application.Server.McpServer>());
-    builder.Services.AddSingleton<IToolRegistry>(provider => provider.GetRequiredService<McpServer.Application.Server.McpServer>());
-    builder.Services.AddSingleton<IResourceRegistry>(provider => provider.GetRequiredService<McpServer.Application.Server.McpServer>());
-    builder.Services.AddSingleton<IPromptRegistry>(provider => provider.GetRequiredService<McpServer.Application.Server.McpServer>());
+    // Add MCP Server services
+    builder.Services.AddMcpServer();
     
     // Transport
     builder.Services.AddSingleton<ITransportManager, TransportManager>();
@@ -296,6 +300,9 @@ try
     // Add metrics middleware
     app.UseMetrics();
     
+    // Add rate limiting middleware
+    app.UseHttpRateLimiting();
+    
     // Add WebSocket support
     app.UseWebSockets();
     app.UseWebSocketMcp("/ws");
@@ -325,7 +332,7 @@ try
             timestamp = DateTimeOffset.UtcNow,
             services = new
             {
-                mcpServer = mcpServer.IsInitialized ? "initialized" : "not initialized",
+                mcpServer = (mcpServer.ServerInfo != null && mcpServer.Capabilities != null) ? "ready" : "not ready",
                 sseTransport = "available"
             }
         });
@@ -361,8 +368,11 @@ try
             var method = methodElement.GetString();
             var id = root.TryGetProperty("id", out var idElement) ? idElement.GetRawText() : null;
             
-            // Route the message through the message router
-            var response = await messageRouter.RouteMessageAsync(requestBody);
+            // Get rate limit context from middleware
+            var rateLimitContext = context.Items["RateLimitContext"] as RateLimitContext;
+            
+            // Route the message through the message router with rate limiting
+            var response = await messageRouter.RouteMessageAsync(requestBody, rateLimitContext);
             
             // Write response
             context.Response.ContentType = "application/json";
@@ -407,3 +417,8 @@ async Task WriteErrorResponse(HttpContext context, string? id, int code, string 
     context.Response.ContentType = "application/json";
     await context.Response.WriteAsJsonAsync(response);
 }
+
+/// <summary>
+/// Program class for testing purposes.
+/// </summary>
+public partial class Program { }

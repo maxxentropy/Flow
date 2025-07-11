@@ -2,10 +2,13 @@ using FluentAssertions;
 using McpServer.Application.Handlers;
 using McpServer.Application.Messages;
 using McpServer.Application.Server;
+using McpServer.Application.Services;
 using McpServer.Domain.Exceptions;
+using McpServer.Domain.Protocol;
 using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Protocol.Messages;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -16,6 +19,7 @@ public class InitializeHandlerTests
     private readonly Mock<ILogger<InitializeHandler>> _loggerMock;
     private readonly Mock<IMcpServer> _serverMock;
     private readonly Mock<IServiceProvider> _serviceProviderMock;
+    private readonly IProtocolVersionNegotiator _versionNegotiator;
     private readonly InitializeHandler _handler;
 
     public InitializeHandlerTests()
@@ -24,7 +28,19 @@ public class InitializeHandlerTests
         _serverMock = new Mock<IMcpServer>();
         _serviceProviderMock = new Mock<IServiceProvider>();
         _serviceProviderMock.Setup(x => x.GetService(typeof(IMcpServer))).Returns(_serverMock.Object);
-        _handler = new InitializeHandler(_loggerMock.Object, _serviceProviderMock.Object);
+        
+        // Create a real version negotiator with test configuration
+        var versionConfig = new ProtocolVersionConfiguration
+        {
+            SupportedVersions = ["0.1.0", "0.2.0", "1.0.0"],
+            CurrentVersion = "0.1.0",
+            AllowBackwardCompatibility = true
+        };
+        _versionNegotiator = new ProtocolVersionNegotiator(
+            new Mock<ILogger<ProtocolVersionNegotiator>>().Object,
+            Options.Create(versionConfig));
+        
+        _handler = new InitializeHandler(_loggerMock.Object, _serviceProviderMock.Object, _versionNegotiator);
     }
 
     [Fact]
@@ -64,7 +80,7 @@ public class InitializeHandlerTests
             }
         };
 
-        _serverMock.SetupGet(s => s.IsInitialized).Returns(false);
+        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
         _serverMock.SetupGet(s => s.ServerInfo).Returns(new ServerInfo { Name = "TestServer", Version = "1.0.0" });
         _serverMock.SetupGet(s => s.Capabilities).Returns(new ServerCapabilities());
 
@@ -78,30 +94,8 @@ public class InitializeHandlerTests
         response.ServerInfo.Name.Should().Be("TestServer");
     }
 
-    [Fact]
-    public async Task HandleMessageAsync_Should_Throw_If_Already_Initialized()
-    {
-        // Arrange
-        var request = new JsonRpcRequest<InitializeRequest>
-        {
-            Jsonrpc = "2.0",
-            Id = 1,
-            Method = "initialize",
-            Params = new InitializeRequest
-            {
-                ProtocolVersion = "0.1.0",
-                ClientInfo = new ClientInfo { Name = "TestClient", Version = "1.0.0" },
-                Capabilities = new ClientCapabilities()
-            }
-        };
-
-        _serverMock.SetupGet(s => s.IsInitialized).Returns(true);
-
-        // Act & Assert
-        var act = () => _handler.HandleMessageAsync(request);
-        await act.Should().ThrowAsync<ProtocolException>()
-            .WithMessage("Server is already initialized");
-    }
+    // Note: Duplicate initialization checks are now handled by ConnectionAwareMessageRouter
+    // This test is no longer relevant as the handler doesn't check initialization state
 
     [Fact]
     public async Task HandleMessageAsync_Should_Throw_For_Unsupported_Protocol_Version()
@@ -120,11 +114,11 @@ public class InitializeHandlerTests
             }
         };
 
-        _serverMock.SetupGet(s => s.IsInitialized).Returns(false);
+        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
 
         // Act & Assert
         var act = () => _handler.HandleMessageAsync(request);
         await act.Should().ThrowAsync<ProtocolException>()
-            .WithMessage("Unsupported protocol version: 2.0.0");
+            .WithMessage("*2.0.0*");
     }
 }

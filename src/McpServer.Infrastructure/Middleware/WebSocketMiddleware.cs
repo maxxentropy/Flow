@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServer.Infrastructure.Middleware;
 
@@ -41,12 +42,7 @@ public class WebSocketMiddleware
     /// Processes HTTP requests and upgrades WebSocket requests.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
-    /// <param name="mcpServer">The MCP server instance.</param>
-    /// <param name="transportFactory">Factory function to create WebSocket transport.</param>
-    public async Task InvokeAsync(
-        HttpContext context,
-        IMcpServer mcpServer,
-        Func<WebSocketTransport> transportFactory)
+    public async Task InvokeAsync(HttpContext context)
     {
         if (context.Request.Path == _path)
         {
@@ -57,25 +53,49 @@ public class WebSocketMiddleware
 
                 try
                 {
-                    // Create a new transport instance for this connection
-                    var transport = transportFactory();
-                    
-                    // Accept the WebSocket connection
-                    await transport.AcceptWebSocketAsync(context);
-                    
-                    // Start the MCP server with this transport
-                    await mcpServer.StartAsync(transport);
-                    
-                    // Keep the connection alive until it's closed
-                    while (transport.IsConnected)
+                    // Validate origin if configured
+                    if (_options.Value.ValidateOrigin && _options.Value.AllowedOrigins.Count > 0)
                     {
-                        await Task.Delay(1000);
+                        var origin = context.Request.Headers["Origin"].ToString();
+                        if (!string.IsNullOrEmpty(origin) && !_options.Value.AllowedOrigins.Contains(origin))
+                        {
+                            _logger.LogWarning("Rejected WebSocket connection from unauthorized origin: {Origin}", origin);
+                            context.Response.StatusCode = 403;
+                            await context.Response.WriteAsync("Forbidden: Origin not allowed");
+                            return;
+                        }
                     }
+
+                    // Accept the WebSocket connection
+                    var webSocket = await context.WebSockets.AcceptWebSocketAsync(_options.Value.SubProtocol);
+                    
+                    // Generate a unique connection ID
+                    var connectionId = Guid.NewGuid().ToString("N")[..8];
+                    
+                    // Get services from DI container
+                    var messageRouter = context.RequestServices.GetRequiredService<IMessageRouter>();
+                    var handlerLogger = context.RequestServices.GetRequiredService<ILogger<WebSocketHandler>>();
+                    
+                    // Create and start the WebSocket handler
+                    using var handler = new WebSocketHandler(
+                        handlerLogger,
+                        messageRouter,
+                        _options,
+                        webSocket,
+                        connectionId,
+                        context.RequestAborted);
+                    
+                    await handler.HandleConnectionAsync();
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error handling WebSocket connection");
-                    context.Response.StatusCode = 500;
+                    
+                    if (!context.Response.HasStarted)
+                    {
+                        context.Response.StatusCode = 500;
+                        await context.Response.WriteAsync("Internal server error");
+                    }
                 }
             }
             else

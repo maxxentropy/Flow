@@ -1,5 +1,7 @@
 using FluentAssertions;
+using McpServer.Application.Server;
 using McpServer.Application.Services;
+using McpServer.Domain.Connection;
 using McpServer.Domain.Protocol.Messages;
 using McpServer.Domain.Transport;
 using Microsoft.Extensions.Logging;
@@ -197,6 +199,115 @@ public class NotificationServiceTests
                 It.IsAny<EventId>(),
                 It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Error sending notification")),
                 exception,
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+    
+    [Fact]
+    public async Task SendNotificationAsync_WithConnections_SendsToAllReadyConnections()
+    {
+        // Arrange
+        var service = new NotificationService(_loggerMock.Object);
+        var connectionAware = service as IConnectionAwareNotificationService;
+        
+        var conn1 = new Mock<IConnection>();
+        conn1.Setup(x => x.ConnectionId).Returns("conn1");
+        conn1.Setup(x => x.State).Returns(ConnectionState.Ready);
+        
+        var conn2 = new Mock<IConnection>();
+        conn2.Setup(x => x.ConnectionId).Returns("conn2");
+        conn2.Setup(x => x.State).Returns(ConnectionState.Ready);
+        
+        var conn3 = new Mock<IConnection>();
+        conn3.Setup(x => x.ConnectionId).Returns("conn3");
+        conn3.Setup(x => x.State).Returns(ConnectionState.Connected); // Not ready
+        
+        connectionAware.AddConnection(conn1.Object);
+        connectionAware.AddConnection(conn2.Object);
+        connectionAware.AddConnection(conn3.Object);
+        
+        // Act
+        await service.NotifyToolsUpdatedAsync();
+        
+        // Assert
+        conn1.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        conn2.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        conn3.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+    
+    [Fact]
+    public void AddConnection_AddsConnectionSuccessfully()
+    {
+        // Arrange
+        var service = new NotificationService(_loggerMock.Object);
+        var connectionAware = service as IConnectionAwareNotificationService;
+        
+        var connection = new Mock<IConnection>();
+        connection.Setup(x => x.ConnectionId).Returns("test-conn");
+        connection.Setup(x => x.State).Returns(ConnectionState.Ready);
+        
+        // Act
+        connectionAware.AddConnection(connection.Object);
+        
+        // Assert by sending notification
+        service.NotifyToolsUpdatedAsync().Wait();
+        connection.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+    
+    [Fact]
+    public void RemoveConnection_RemovesConnectionSuccessfully()
+    {
+        // Arrange
+        var service = new NotificationService(_loggerMock.Object);
+        var connectionAware = service as IConnectionAwareNotificationService;
+        
+        var connection = new Mock<IConnection>();
+        connection.Setup(x => x.ConnectionId).Returns("test-conn");
+        connection.Setup(x => x.State).Returns(ConnectionState.Ready);
+        
+        connectionAware.AddConnection(connection.Object);
+        
+        // Act
+        connectionAware.RemoveConnection("test-conn");
+        
+        // Assert - Connection should not receive notifications
+        service.NotifyToolsUpdatedAsync().Wait();
+        connection.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+    
+    [Fact]
+    public async Task SendNotificationAsync_WithFailingConnection_ContinuesWithOthers()
+    {
+        // Arrange
+        var service = new NotificationService(_loggerMock.Object);
+        var connectionAware = service as IConnectionAwareNotificationService;
+        
+        var failingConn = new Mock<IConnection>();
+        failingConn.Setup(x => x.ConnectionId).Returns("failing");
+        failingConn.Setup(x => x.State).Returns(ConnectionState.Ready);
+        failingConn.Setup(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Connection failed"));
+        
+        var workingConn = new Mock<IConnection>();
+        workingConn.Setup(x => x.ConnectionId).Returns("working");
+        workingConn.Setup(x => x.State).Returns(ConnectionState.Ready);
+        
+        connectionAware.AddConnection(failingConn.Object);
+        connectionAware.AddConnection(workingConn.Object);
+        
+        // Act
+        await service.NotifyToolsUpdatedAsync();
+        
+        // Assert - Working connection should still receive notification
+        workingConn.Verify(x => x.SendAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        
+        // Should log error for failing connection
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Error,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("Failed to send notification to connection")),
+                It.IsAny<Exception>(),
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }

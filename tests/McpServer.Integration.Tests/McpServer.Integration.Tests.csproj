@@ -19,11 +19,13 @@
     </PackageReference>
     <PackageReference Include="Moq" Version="4.20.69" />
     <PackageReference Include="FluentAssertions" Version="6.12.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\McpServer.Abstractions\McpServer.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\McpServer.Web\McpServer.Web.csproj" />
   </ItemGroup>
 
 </Project>

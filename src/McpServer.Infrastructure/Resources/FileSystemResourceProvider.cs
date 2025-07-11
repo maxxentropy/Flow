@@ -5,12 +5,12 @@ namespace McpServer.Infrastructure.Resources;
 /// <summary>
 /// Provides access to file system resources.
 /// </summary>
-public class FileSystemResourceProvider : IResourceProvider
+public class FileSystemResourceProvider : IResourceProvider, IDisposable
 {
     private readonly ILogger<FileSystemResourceProvider> _logger;
     private readonly IOptions<FileSystemResourceOptions> _options;
     private readonly ConcurrentDictionary<string, HashSet<IResourceObserver>> _observers = new();
-    private readonly Dictionary<string, FileSystemWatcher> _watchers = new();
+    private readonly ConcurrentDictionary<string, FileSystemWatcher> _watchers = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FileSystemResourceProvider"/> class.
@@ -150,11 +150,10 @@ public class FileSystemResourceProvider : IResourceProvider
                     _observers.TryRemove(uri, out _);
                     
                     // Remove file watcher
-                    if (_watchers.TryGetValue(uri, out var watcher))
+                    if (_watchers.TryRemove(uri, out var watcher))
                     {
                         watcher.EnableRaisingEvents = false;
                         watcher.Dispose();
-                        _watchers.Remove(uri);
                     }
                 }
             }
@@ -286,7 +285,7 @@ public class FileSystemResourceProvider : IResourceProvider
         watcher.Changed += (sender, e) => OnFileChanged(uri);
         watcher.EnableRaisingEvents = true;
 
-        _watchers[uri] = watcher;
+        _watchers.TryAdd(uri, watcher);
     }
 
     private async void OnFileChanged(string uri)
@@ -314,6 +313,30 @@ public class FileSystemResourceProvider : IResourceProvider
                 _logger.LogError(ex, "Error notifying observer of resource update");
             }
         }
+    }
+    
+    /// <summary>
+    /// Disposes the resource provider and all watchers.
+    /// </summary>
+    public void Dispose()
+    {
+        foreach (var watcher in _watchers.Values)
+        {
+            try
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error disposing file watcher");
+            }
+        }
+        
+        _watchers.Clear();
+        _observers.Clear();
+        
+        GC.SuppressFinalize(this);
     }
 }
 

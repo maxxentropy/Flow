@@ -169,18 +169,20 @@ public class HealthCheckService : IHealthCheckService
         RegisterCheck("mcp_server", ct =>
         {
             var stopwatch = Stopwatch.StartNew();
-            var isInitialized = _mcpServer.IsInitialized;
+            // Check if server has basic capabilities (indicating it's ready to accept connections)
+            var isHealthy = _mcpServer.ServerInfo != null && _mcpServer.Capabilities != null;
             stopwatch.Stop();
 
             return Task.FromResult(new ComponentHealthResult
             {
                 Name = "mcp_server",
-                Status = isInitialized ? HealthStatus.Healthy : HealthStatus.Unhealthy,
+                Status = isHealthy ? HealthStatus.Healthy : HealthStatus.Unhealthy,
                 ResponseTime = stopwatch.Elapsed,
-                Description = isInitialized ? "MCP Server is initialized" : "MCP Server is not initialized",
+                Description = isHealthy ? "MCP Server is ready to accept connections" : "MCP Server is not ready",
                 Data = new Dictionary<string, object>
                 {
-                    ["initialized"] = isInitialized
+                    ["server_info_available"] = _mcpServer.ServerInfo != null,
+                    ["capabilities_available"] = _mcpServer.Capabilities != null
                 }
             });
         });

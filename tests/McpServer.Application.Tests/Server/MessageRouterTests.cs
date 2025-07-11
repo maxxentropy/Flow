@@ -1,5 +1,6 @@
 using FluentAssertions;
 using McpServer.Application.Server;
+using McpServer.Application.Services;
 using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Services;
 using Microsoft.Extensions.Logging;
@@ -12,14 +13,45 @@ namespace McpServer.Application.Tests.Server;
 public class MessageRouterTests
 {
     private readonly Mock<ILogger<MessageRouter>> _loggerMock;
+    private readonly Mock<IProgressTracker> _progressTrackerMock;
+    private readonly Mock<IErrorResponseBuilder> _errorResponseBuilderMock;
     private readonly List<IMessageHandler> _handlers;
     private readonly MessageRouter _router;
 
     public MessageRouterTests()
     {
         _loggerMock = new Mock<ILogger<MessageRouter>>();
+        _progressTrackerMock = new Mock<IProgressTracker>();
+        _errorResponseBuilderMock = new Mock<IErrorResponseBuilder>();
         _handlers = new List<IMessageHandler>();
-        _router = new MessageRouter(_loggerMock.Object, _handlers);
+        
+        // Set up the error response builder mock to return proper responses
+        _errorResponseBuilderMock.Setup(x => x.CreateErrorResponse(It.IsAny<object?>(), It.IsAny<Exception>()))
+            .Returns<object?, Exception>((id, ex) => new JsonRpcResponse
+            {
+                Jsonrpc = "2.0",
+                Error = new JsonRpcError
+                {
+                    Code = JsonRpcErrorCodes.ParseError,
+                    Message = ex.Message
+                },
+                Id = id
+            });
+            
+        _errorResponseBuilderMock.Setup(x => x.CreateErrorResponse(It.IsAny<object?>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<object?>()))
+            .Returns<object?, int, string, object?>((id, code, message, data) => new JsonRpcResponse
+            {
+                Jsonrpc = "2.0",
+                Error = new JsonRpcError
+                {
+                    Code = code,
+                    Message = message,
+                    Data = data
+                },
+                Id = id
+            });
+        
+        _router = new MessageRouter(_loggerMock.Object, _handlers, _progressTrackerMock.Object, _errorResponseBuilderMock.Object, null);
     }
 
     [Fact]
@@ -35,7 +67,7 @@ public class MessageRouterTests
         result.Should().BeOfType<JsonRpcResponse>();
         var response = result as JsonRpcResponse;
         response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(JsonRpcErrorCodes.ParseError);
+        response.Error!.Code.Should().Be(McpErrorCodes.ParseError);
     }
 
     [Fact]
@@ -51,7 +83,7 @@ public class MessageRouterTests
         result.Should().BeOfType<JsonRpcResponse>();
         var response = result as JsonRpcResponse;
         response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(JsonRpcErrorCodes.InvalidRequest);
+        response.Error!.Code.Should().Be(McpErrorCodes.InvalidRequest);
         response.Error.Message.Should().Contain("Invalid JSON-RPC version");
     }
 
@@ -68,7 +100,7 @@ public class MessageRouterTests
         result.Should().BeOfType<JsonRpcResponse>();
         var response = result as JsonRpcResponse;
         response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(JsonRpcErrorCodes.InvalidRequest);
+        response.Error!.Code.Should().Be(McpErrorCodes.InvalidRequest);
         response.Error.Message.Should().Contain("Missing method");
     }
 
@@ -90,7 +122,7 @@ public class MessageRouterTests
         result.Should().BeOfType<JsonRpcResponse>();
         var response = result as JsonRpcResponse;
         response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(JsonRpcErrorCodes.MethodNotFound);
+        response.Error!.Code.Should().Be(McpErrorCodes.MethodNotFound);
         response.Error.Message.Should().Contain("unknown_method");
     }
 

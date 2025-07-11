@@ -131,9 +131,7 @@ public class ToolsHandler : IMessageHandler
         _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
         _toolRegistry ??= _serviceProvider.GetRequiredService<IToolRegistry>();
         
-        if (!_server.IsInitialized)
-        {
-            throw new ProtocolException("Server not initialized");
-        }
+        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
+        // No need to check server-level initialization as it's connection-specific
     }
 }
