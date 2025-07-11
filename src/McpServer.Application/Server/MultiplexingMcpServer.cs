@@ -11,17 +11,16 @@ namespace McpServer.Application.Server;
 /// <summary>
 /// MCP server implementation that supports multiple concurrent connections.
 /// </summary>
-public class MultiplexingMcpServer : IMcpServer, IToolRegistry, IResourceRegistry, IPromptRegistry, IDisposable
+public class MultiplexingMcpServer : IMcpServer, IDisposable
 {
     private readonly ILogger<MultiplexingMcpServer> _logger;
     private readonly IConnectionManager _connectionManager;
     private readonly IConnectionAwareMessageRouter _messageRouter;
     private readonly INotificationService _notificationService;
     private readonly ISamplingService? _samplingService;
-    private readonly ConcurrentDictionary<string, ITool> _tools = new();
-    private readonly ConcurrentBag<IResourceProvider> _resourceProviders = new();
-    private readonly ConcurrentBag<IPromptProvider> _promptProviders = new();
-    private readonly SemaphoreSlim _registrationLock = new(1, 1);
+    private readonly IToolRegistry _toolRegistry;
+    private readonly IResourceRegistry _resourceRegistry;
+    private readonly IPromptRegistry _promptRegistry;
     private readonly ConcurrentDictionary<string, List<Action>> _connectionCleanupActions = new();
 
     /// <summary>
@@ -33,20 +32,49 @@ public class MultiplexingMcpServer : IMcpServer, IToolRegistry, IResourceRegistr
         IConnectionAwareMessageRouter messageRouter,
         INotificationService notificationService,
         ISamplingService? samplingService,
+        IToolRegistry toolRegistry,
+        IResourceRegistry resourceRegistry,
+        IPromptRegistry promptRegistry,
         ServerInfo serverInfo,
         ServerCapabilities capabilities)
     {
+        logger.LogInformation("STARTUP DEBUG: MultiplexingMcpServer constructor called");
         _logger = logger;
+        logger.LogInformation("STARTUP DEBUG: Setting connection manager...");
         _connectionManager = connectionManager;
+        logger.LogInformation("STARTUP DEBUG: Setting message router...");
         _messageRouter = messageRouter;
+        logger.LogInformation("STARTUP DEBUG: Setting notification service...");
         _notificationService = notificationService;
+        logger.LogInformation("STARTUP DEBUG: Setting sampling service...");
         _samplingService = samplingService;
+        logger.LogInformation("STARTUP DEBUG: Setting registries...");
+        _toolRegistry = toolRegistry;
+        _resourceRegistry = resourceRegistry;
+        _promptRegistry = promptRegistry;
+        logger.LogInformation("STARTUP DEBUG: Setting server info and capabilities...");
         ServerInfo = serverInfo;
         Capabilities = capabilities;
         
+        // Subscribe to registry events
+        if (_toolRegistry is ToolRegistry toolReg)
+        {
+            toolReg.ToolRegistered += OnToolRegistered;
+        }
+        if (_resourceRegistry is ResourceRegistry resourceReg)
+        {
+            resourceReg.ResourceProviderRegistered += OnResourceProviderRegistered;
+        }
+        if (_promptRegistry is PromptRegistry promptReg)
+        {
+            promptReg.PromptProviderRegistered += OnPromptProviderRegistered;
+        }
+        
         // Set up connection event handlers
+        logger.LogInformation("STARTUP DEBUG: Setting up connection event handlers...");
         _connectionManager.ConnectionEstablished += OnConnectionEstablished;
         _connectionManager.ConnectionClosed += OnConnectionClosed;
+        logger.LogInformation("STARTUP DEBUG: MultiplexingMcpServer constructor completed");
         
         _logger.LogInformation("Multiplexing MCP server initialized");
     }
@@ -103,119 +131,89 @@ public class MultiplexingMcpServer : IMcpServer, IToolRegistry, IResourceRegistr
     /// <inheritdoc/>
     public void RegisterTool(ITool tool)
     {
-        _registrationLock.Wait();
-        try
-        {
-            _tools[tool.Name] = tool;
-            _logger.LogInformation("Registered tool: {ToolName}", tool.Name);
-            
-            // Send notification to all connections if capabilities support it
-            if (Capabilities.Tools?.ListChanged == true)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _messageRouter.BroadcastNotificationAsync(new
-                        {
-                            jsonrpc = "2.0",
-                            method = "tools/list_changed"
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to broadcast tools updated notification");
-                    }
-                });
-            }
-        }
-        finally
-        {
-            _registrationLock.Release();
-        }
+        _toolRegistry.RegisterTool(tool);
     }
 
     /// <inheritdoc/>
     public void RegisterResourceProvider(IResourceProvider provider)
     {
-        _registrationLock.Wait();
-        try
-        {
-            _resourceProviders.Add(provider);
-            _logger.LogInformation("Registered resource provider: {ProviderType}", provider.GetType().Name);
-            
-            // Send notification to all connections if capabilities support it
-            if (Capabilities.Resources?.ListChanged == true)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _messageRouter.BroadcastNotificationAsync(new
-                        {
-                            jsonrpc = "2.0",
-                            method = "resources/list_changed"
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to broadcast resources updated notification");
-                    }
-                });
-            }
-        }
-        finally
-        {
-            _registrationLock.Release();
-        }
+        _resourceRegistry.RegisterResourceProvider(provider);
     }
 
     /// <inheritdoc/>
     public void RegisterPromptProvider(IPromptProvider provider)
     {
-        _registrationLock.Wait();
-        try
+        _promptRegistry.RegisterPromptProvider(provider);
+    }
+
+    private void OnToolRegistered(object? sender, ToolEventArgs e)
+    {
+        // Send notification to all connections if capabilities support it
+        if (Capabilities.Tools?.ListChanged == true)
         {
-            _promptProviders.Add(provider);
-            _logger.LogInformation("Registered prompt provider: {ProviderType}", provider.GetType().Name);
-            
-            // Send notification to all connections if capabilities support it
-            if (Capabilities.Prompts?.ListChanged == true)
+            _ = Task.Run(async () =>
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
+                    await _messageRouter.BroadcastNotificationAsync(new
                     {
-                        await _messageRouter.BroadcastNotificationAsync(new
-                        {
-                            jsonrpc = "2.0",
-                            method = "prompts/list_changed"
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to broadcast prompts updated notification");
-                    }
-                });
-            }
-        }
-        finally
-        {
-            _registrationLock.Release();
+                        jsonrpc = "2.0",
+                        method = "tools/list_changed"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to broadcast tools updated notification");
+                }
+            });
         }
     }
 
-    /// <inheritdoc/>
-    public ITool? GetTool(string name) => _tools.TryGetValue(name, out var tool) ? tool : null;
+    private void OnResourceProviderRegistered(object? sender, ResourceProviderEventArgs e)
+    {
+        // Send notification to all connections if capabilities support it
+        if (Capabilities.Resources?.ListChanged == true)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _messageRouter.BroadcastNotificationAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        method = "resources/list_changed"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to broadcast resources updated notification");
+                }
+            });
+        }
+    }
 
-    /// <inheritdoc/>
-    public IReadOnlyDictionary<string, ITool> GetTools() => _tools;
-
-    /// <inheritdoc/>
-    public IReadOnlyCollection<IResourceProvider> GetResourceProviders() => _resourceProviders.ToArray();
-
-    /// <inheritdoc/>
-    public IReadOnlyCollection<IPromptProvider> GetPromptProviders() => _promptProviders.ToArray();
+    private void OnPromptProviderRegistered(object? sender, PromptProviderEventArgs e)
+    {
+        // Send notification to all connections if capabilities support it
+        if (Capabilities.Prompts?.ListChanged == true)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _messageRouter.BroadcastNotificationAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        method = "prompts/list_changed"
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to broadcast prompts updated notification");
+                }
+            });
+        }
+    }
 
     private async void OnMessageReceived(string connectionId, MessageReceivedEventArgs e)
     {
@@ -280,7 +278,24 @@ public class MultiplexingMcpServer : IMcpServer, IToolRegistry, IResourceRegistr
     /// </summary>
     public void Dispose()
     {
-        _registrationLock?.Dispose();
+        // Unsubscribe from registry events
+        if (_toolRegistry is ToolRegistry toolReg)
+        {
+            toolReg.ToolRegistered -= OnToolRegistered;
+        }
+        if (_resourceRegistry is ResourceRegistry resourceReg)
+        {
+            resourceReg.ResourceProviderRegistered -= OnResourceProviderRegistered;
+        }
+        if (_promptRegistry is PromptRegistry promptReg)
+        {
+            promptReg.PromptProviderRegistered -= OnPromptProviderRegistered;
+        }
+        
+        // Unsubscribe from connection events
+        _connectionManager.ConnectionEstablished -= OnConnectionEstablished;
+        _connectionManager.ConnectionClosed -= OnConnectionClosed;
+        
         GC.SuppressFinalize(this);
     }
 }

@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Linq;
 using McpServer.Application.Messages;
-using McpServer.Application.Server;
 using McpServer.Application.Services;
 using McpServer.Application.Tracing;
 using McpServer.Domain.Exceptions;
@@ -9,7 +8,6 @@ using McpServer.Domain.Resources;
 using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Services;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServer.Application.Handlers;
 
@@ -19,21 +17,21 @@ namespace McpServer.Application.Handlers;
 public class ResourcesHandler : IMessageHandler
 {
     private readonly ILogger<ResourcesHandler> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private IMcpServer? _server;
-    private IResourceRegistry? _resourceRegistry;
-    private INotificationService? _notificationService;
+    private readonly IResourceRegistry _resourceRegistry;
+    private readonly INotificationService _notificationService;
     private readonly Dictionary<string, HashSet<IResourceObserver>> _subscriptions = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ResourcesHandler"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="serviceProvider">The service provider.</param>
-    public ResourcesHandler(ILogger<ResourcesHandler> logger, IServiceProvider serviceProvider)
+    /// <param name="resourceRegistry">The resource registry.</param>
+    /// <param name="notificationService">The notification service.</param>
+    public ResourcesHandler(ILogger<ResourcesHandler> logger, IResourceRegistry resourceRegistry, INotificationService notificationService)
     {
         _logger = logger;
-        _serviceProvider = serviceProvider;
+        _resourceRegistry = resourceRegistry;
+        _notificationService = notificationService;
     }
 
     /// <inheritdoc/>
@@ -98,10 +96,8 @@ public class ResourcesHandler : IMessageHandler
 
     private async Task<object> HandleListResourcesAsync(CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         var allResources = new List<Resource>();
-        var providers = _resourceRegistry!.GetResourceProviders();
+        var providers = _resourceRegistry.GetResourceProviders();
 
         foreach (var provider in providers)
         {
@@ -128,11 +124,9 @@ public class ResourcesHandler : IMessageHandler
 
     private async Task<object> HandleReadResourceAsync(ResourcesReadRequest request, CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         _logger.LogInformation("Reading resource: {Uri}", request.Uri);
 
-        var providers = _resourceRegistry!.GetResourceProviders();
+        var providers = _resourceRegistry.GetResourceProviders();
         
         foreach (var provider in providers)
         {
@@ -167,12 +161,7 @@ public class ResourcesHandler : IMessageHandler
 
     private async Task<object> HandleSubscribeResourceAsync(ResourcesSubscribeRequest request, CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         _logger.LogInformation("Subscribing to resource: {Uri}", request.Uri);
-
-        // Get notification service if not already available
-        _notificationService ??= _serviceProvider.GetRequiredService<INotificationService>();
 
         // Create observer for this subscription
         var observer = new ResourceObserver(request.Uri, _logger, _notificationService);
@@ -189,7 +178,7 @@ public class ResourcesHandler : IMessageHandler
         }
 
         // Subscribe with providers
-        var providers = _resourceRegistry!.GetResourceProviders();
+        var providers = _resourceRegistry.GetResourceProviders();
         var subscribed = false;
 
         foreach (var provider in providers)
@@ -240,8 +229,6 @@ public class ResourcesHandler : IMessageHandler
 
     private async Task<object> HandleUnsubscribeResourceAsync(ResourcesUnsubscribeRequest request, CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         _logger.LogInformation("Unsubscribing from resource: {Uri}", request.Uri);
 
         // Get observers for this URI
@@ -259,7 +246,7 @@ public class ResourcesHandler : IMessageHandler
         }
 
         // Unsubscribe with providers
-        var providers = _resourceRegistry!.GetResourceProviders();
+        var providers = _resourceRegistry.GetResourceProviders();
         
         foreach (var observer in observersToRemove)
         {
@@ -284,16 +271,6 @@ public class ResourcesHandler : IMessageHandler
         Activity.Current?.SetTag("resources.observers_removed", observersToRemove.Length);
         
         return new { success = true };
-    }
-
-    private void EnsureInitialized()
-    {
-        // Lazily get the server instance
-        _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
-        _resourceRegistry ??= _serviceProvider.GetRequiredService<IResourceRegistry>();
-        
-        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
-        // No need to check server-level initialization as it's connection-specific
     }
 
     private class ResourceObserver : IResourceObserver

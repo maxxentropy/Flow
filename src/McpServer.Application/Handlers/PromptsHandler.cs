@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Linq;
 using McpServer.Application.Messages;
-using McpServer.Application.Server;
 using McpServer.Application.Services;
 using McpServer.Application.Tracing;
 using McpServer.Domain.Exceptions;
@@ -9,7 +8,6 @@ using McpServer.Domain.Prompts;
 using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Services;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServer.Application.Handlers;
 
@@ -19,19 +17,17 @@ namespace McpServer.Application.Handlers;
 public class PromptsHandler : IMessageHandler
 {
     private readonly ILogger<PromptsHandler> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private IMcpServer? _server;
-    private IPromptRegistry? _promptRegistry;
+    private readonly IPromptRegistry _promptRegistry;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PromptsHandler"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="serviceProvider">The service provider.</param>
-    public PromptsHandler(ILogger<PromptsHandler> logger, IServiceProvider serviceProvider)
+    /// <param name="promptRegistry">The prompt registry.</param>
+    public PromptsHandler(ILogger<PromptsHandler> logger, IPromptRegistry promptRegistry)
     {
         _logger = logger;
-        _serviceProvider = serviceProvider;
+        _promptRegistry = promptRegistry;
     }
 
     /// <inheritdoc/>
@@ -76,10 +72,8 @@ public class PromptsHandler : IMessageHandler
 
     private async Task<object> HandleListPromptsAsync(CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         var allPrompts = new List<Prompt>();
-        var providers = _promptRegistry!.GetPromptProviders();
+        var providers = _promptRegistry.GetPromptProviders();
 
         foreach (var provider in providers)
         {
@@ -106,11 +100,9 @@ public class PromptsHandler : IMessageHandler
 
     private async Task<object> HandleGetPromptAsync(PromptsGetRequest request, CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         _logger.LogInformation("Getting prompt: {PromptName}", request.Name);
 
-        var providers = _promptRegistry!.GetPromptProviders();
+        var providers = _promptRegistry.GetPromptProviders();
         
         foreach (var provider in providers)
         {
@@ -139,15 +131,5 @@ public class PromptsHandler : IMessageHandler
         }
 
         throw new McpException($"Prompt '{request.Name}' not found");
-    }
-
-    private void EnsureInitialized()
-    {
-        // Lazily get the server instance
-        _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
-        _promptRegistry ??= _serviceProvider.GetRequiredService<IPromptRegistry>();
-        
-        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
-        // No need to check server-level initialization as it's connection-specific
     }
 }

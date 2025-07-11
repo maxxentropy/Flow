@@ -27,7 +27,9 @@ public class AuthenticationService : IAuthenticationService
     {
         _logger = logger;
         _configuration = configuration;
-        _providers = providers.ToDictionary(p => p.Scheme, StringComparer.OrdinalIgnoreCase);
+        _providers = providers
+            .GroupBy(p => p.Scheme, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc/>

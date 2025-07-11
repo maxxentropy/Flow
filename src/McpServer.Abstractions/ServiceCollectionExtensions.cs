@@ -47,6 +47,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISamplingService, SamplingService>();
         services.AddSingleton<ILoggingService, LoggingService>();
         services.AddSingleton<IRootRegistry, RootRegistry>();
+        
+        // Add registries as standalone services
+        services.AddSingleton<IToolRegistry, ToolRegistry>();
+        services.AddSingleton<IResourceRegistry, ResourceRegistry>();
+        services.AddSingleton<IPromptRegistry, PromptRegistry>();
+        
+        // Add completion service (no longer needs lazy loading)
         services.AddSingleton<ICompletionService, CompletionService>();
         services.AddSingleton<IAuthenticationService, AuthenticationService>();
         services.AddSingleton<IHeartbeatService, HeartbeatService>();
@@ -64,7 +71,9 @@ public static class ServiceCollectionExtensions
         
         // Connection management
         services.AddSingleton<IConnectionManager, ConnectionManager>();
-        services.AddHostedService(provider => provider.GetRequiredService<IConnectionManager>() as ConnectionManager ?? throw new InvalidOperationException());
+        // NOTE: Removed hosted service registration to prevent deadlock during startup
+        // The ConnectionManager will be initialized when first accessed by MultiplexingMcpServer
+        // services.AddHostedService(provider => provider.GetRequiredService<IConnectionManager>() as ConnectionManager ?? throw new InvalidOperationException());
         services.AddSingleton<IConnectionAwareMessageRouter, ConnectionAwareMessageRouter>();
         
         services.AddSingleton<IMcpServer>(provider =>
@@ -93,14 +102,14 @@ public static class ServiceCollectionExtensions
             var connectionAwareRouter = provider.GetRequiredService<IConnectionAwareMessageRouter>();
             var notificationService = provider.GetRequiredService<INotificationService>();
             var samplingService = provider.GetService<ISamplingService>();
+            var toolRegistry = provider.GetRequiredService<IToolRegistry>();
+            var resourceRegistry = provider.GetRequiredService<IResourceRegistry>();
+            var promptRegistry = provider.GetRequiredService<IPromptRegistry>();
             
-            return new MultiplexingMcpServer(logger, connectionManager, connectionAwareRouter, notificationService, samplingService, serverInfo, capabilities);
+            return new MultiplexingMcpServer(logger, connectionManager, connectionAwareRouter, notificationService, samplingService, toolRegistry, resourceRegistry, promptRegistry, serverInfo, capabilities);
         });
         
-        // Register the segregated interfaces
-        services.AddSingleton<IToolRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IToolRegistry ?? throw new InvalidOperationException());
-        services.AddSingleton<IResourceRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IResourceRegistry ?? throw new InvalidOperationException());
-        services.AddSingleton<IPromptRegistry>(provider => provider.GetRequiredService<IMcpServer>() as IPromptRegistry ?? throw new InvalidOperationException());
+        // Note: IToolRegistry, IResourceRegistry, and IPromptRegistry are now registered as standalone services above
 
         services.AddSingleton<IMessageRouter>(provider =>
         {

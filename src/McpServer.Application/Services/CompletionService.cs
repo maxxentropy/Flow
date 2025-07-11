@@ -1,4 +1,3 @@
-using McpServer.Application.Server;
 using McpServer.Domain.Protocol.Messages;
 using McpServer.Domain.Services;
 using Microsoft.Extensions.Logging;
@@ -11,7 +10,6 @@ namespace McpServer.Application.Services;
 public class CompletionService : ICompletionService
 {
     private readonly ILogger<CompletionService> _logger;
-    private readonly IToolRegistry _toolRegistry;
     private readonly IResourceRegistry _resourceRegistry;
     private readonly IPromptRegistry _promptRegistry;
 
@@ -19,17 +17,14 @@ public class CompletionService : ICompletionService
     /// Initializes a new instance of the <see cref="CompletionService"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="toolRegistry">The tool registry.</param>
     /// <param name="resourceRegistry">The resource registry.</param>
     /// <param name="promptRegistry">The prompt registry.</param>
     public CompletionService(
         ILogger<CompletionService> logger,
-        IToolRegistry toolRegistry,
         IResourceRegistry resourceRegistry,
         IPromptRegistry promptRegistry)
     {
         _logger = logger;
-        _toolRegistry = toolRegistry;
         _resourceRegistry = resourceRegistry;
         _promptRegistry = promptRegistry;
     }

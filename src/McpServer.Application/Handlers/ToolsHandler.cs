@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Linq;
 using McpServer.Application.Messages;
-using McpServer.Application.Server;
 using McpServer.Application.Services;
 using McpServer.Application.Tracing;
 using McpServer.Domain.Exceptions;
@@ -10,7 +9,6 @@ using McpServer.Domain.Protocol.JsonRpc;
 using McpServer.Domain.Protocol.Messages;
 using McpServer.Domain.Services;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServer.Application.Handlers;
 
@@ -20,19 +18,17 @@ namespace McpServer.Application.Handlers;
 public class ToolsHandler : IMessageHandler
 {
     private readonly ILogger<ToolsHandler> _logger;
-    private readonly IServiceProvider _serviceProvider;
-    private IMcpServer? _server;
-    private IToolRegistry? _toolRegistry;
+    private readonly IToolRegistry _toolRegistry;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ToolsHandler"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="serviceProvider">The service provider.</param>
-    public ToolsHandler(ILogger<ToolsHandler> logger, IServiceProvider serviceProvider)
+    /// <param name="toolRegistry">The tool registry.</param>
+    public ToolsHandler(ILogger<ToolsHandler> logger, IToolRegistry toolRegistry)
     {
         _logger = logger;
-        _serviceProvider = serviceProvider;
+        _toolRegistry = toolRegistry;
     }
 
     /// <inheritdoc/>
@@ -77,9 +73,7 @@ public class ToolsHandler : IMessageHandler
 
     private Task<object> HandleListToolsAsync(CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
-        var tools = _toolRegistry!.GetTools();
+        var tools = _toolRegistry.GetTools();
         var toolList = tools.Values.Select(tool => new ToolInfo
         {
             Name = tool.Name,
@@ -94,11 +88,9 @@ public class ToolsHandler : IMessageHandler
 
     private async Task<object> HandleCallToolAsync(ToolsCallRequest request, CancellationToken cancellationToken)
     {
-        EnsureInitialized();
-
         _logger.LogInformation("Calling tool: {ToolName}", request.Name);
 
-        var tools = _toolRegistry!.GetTools();
+        var tools = _toolRegistry.GetTools();
         if (!tools.TryGetValue(request.Name, out var tool))
         {
             throw new ToolExecutionException(request.Name, $"Tool '{request.Name}' not found");
@@ -123,15 +115,5 @@ public class ToolsHandler : IMessageHandler
             _logger.LogError(ex, "Tool {ToolName} execution failed", request.Name);
             throw new ToolExecutionException(request.Name, ex.Message, ex);
         }
-    }
-
-    private void EnsureInitialized()
-    {
-        // Lazily get the server instance
-        _server ??= _serviceProvider.GetRequiredService<IMcpServer>();
-        _toolRegistry ??= _serviceProvider.GetRequiredService<IToolRegistry>();
-        
-        // Note: Connection-level initialization is handled by ConnectionAwareMessageRouter
-        // No need to check server-level initialization as it's connection-specific
     }
 }

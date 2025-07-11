@@ -47,34 +47,52 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    Log.Information("Starting MCP Server Web Host");
+    Log.Information("========== STARTUP DEBUG: Starting MCP Server Web Host ==========");
     
+    Log.Information("STARTUP DEBUG: Creating WebApplication builder...");
     var builder = WebApplication.CreateBuilder(args);
+    Log.Information("STARTUP DEBUG: WebApplication builder created successfully");
     
     // Configure Kestrel to use specific port
+    Log.Information("STARTUP DEBUG: Configuring Kestrel URLs...");
     builder.WebHost.UseUrls("http://localhost:5080");
+    Log.Information("STARTUP DEBUG: Kestrel URLs configured to http://localhost:5080");
     
     // Add Serilog
+    Log.Information("STARTUP DEBUG: Adding Serilog to host...");
     builder.Host.UseSerilog();
+    Log.Information("STARTUP DEBUG: Serilog added to host");
     
-    Log.Information("Configuring services...");
+    Log.Information("STARTUP DEBUG: Starting service configuration...");
     
     // Add services - but don't use the extension methods that might have circular dependencies
     // Instead, register services directly
     
+    Log.Information("STARTUP DEBUG: Registering MessageRouter...");
     // Core services
     builder.Services.AddSingleton<IMessageRouter>(provider =>
     {
+        Log.Information("STARTUP DEBUG: Creating MessageRouter instance...");
+        Log.Information("STARTUP DEBUG: Resolving ILogger<MessageRouter>...");
         var logger = provider.GetRequiredService<ILogger<MessageRouter>>();
+        Log.Information("STARTUP DEBUG: Resolving IEnumerable<IMessageHandler>...");
         var handlers = provider.GetRequiredService<IEnumerable<IMessageHandler>>();
+        Log.Information("STARTUP DEBUG: Found {HandlerCount} message handlers", handlers.Count());
+        Log.Information("STARTUP DEBUG: Resolving IProgressTracker...");
         var progressTracker = provider.GetRequiredService<IProgressTracker>();
+        Log.Information("STARTUP DEBUG: Resolving IErrorResponseBuilder...");
         var errorResponseBuilder = provider.GetRequiredService<IErrorResponseBuilder>();
+        Log.Information("STARTUP DEBUG: Resolving ValidationMiddleware...");
         var validationMiddleware = provider.GetService<ValidationMiddleware>();
+        Log.Information("STARTUP DEBUG: Resolving RateLimitingMiddleware...");
         var rateLimitingMiddleware = provider.GetService<RateLimitingMiddleware>();
+        Log.Information("STARTUP DEBUG: MessageRouter dependencies resolved, creating instance...");
         return new MessageRouter(logger, handlers, progressTracker, errorResponseBuilder, validationMiddleware, rateLimitingMiddleware);
     });
+    Log.Information("STARTUP DEBUG: MessageRouter registered");
     
     // Message handlers
+    Log.Information("STARTUP DEBUG: Registering message handlers...");
     builder.Services.AddSingleton<IMessageHandler, InitializeHandler>();
     builder.Services.AddSingleton<IMessageHandler, PingHandler>();
     builder.Services.AddSingleton<IMessageHandler, CancelHandler>();
@@ -84,6 +102,7 @@ try
     builder.Services.AddSingleton<IMessageHandler, LoggingHandler>();
     builder.Services.AddSingleton<IMessageHandler, RootsHandler>();
     builder.Services.AddSingleton<IMessageHandler, CompletionHandler>();
+    Log.Information("STARTUP DEBUG: Message handlers registered");
     
     // Add notification service
     builder.Services.AddSingleton<INotificationService, NotificationService>();
@@ -97,7 +116,7 @@ try
     // Add root registry
     builder.Services.AddSingleton<IRootRegistry, RootRegistry>();
     
-    // Add completion service
+    // Add completion service (using IServiceProvider to break circular dependency)
     builder.Services.AddSingleton<ICompletionService, CompletionService>();
     
     // Add authentication service
@@ -151,18 +170,16 @@ try
     builder.Services.AddOpenTelemetryObservability(builder.Configuration);
     
     // Add MCP Server services
+    Log.Information("STARTUP DEBUG: Adding MCP Server services...");
     builder.Services.AddMcpServer();
+    Log.Information("STARTUP DEBUG: MCP Server services added");
     
     // Transport
     builder.Services.AddSingleton<ITransportManager, TransportManager>();
     builder.Services.AddTransient<SseTransport>();
     builder.Services.AddTransient<WebSocketTransport>();
     
-    // Authentication providers
-    builder.Services.AddSingleton<IAuthenticationProvider, ApiKeyAuthenticationProvider>();
-    builder.Services.AddSingleton<IAuthenticationProvider, JwtAuthenticationProvider>();
-    builder.Services.AddSingleton<IAuthenticationProvider, OAuthAuthenticationProvider>();
-    builder.Services.AddSingleton<IAuthenticationProvider, SessionAuthenticationProvider>();
+    // Authentication providers are registered in ServiceCollectionExtensions.cs
     
     // OAuth providers
     builder.Services.AddSingleton<IOAuthProvider, GoogleOAuthProvider>();
@@ -239,78 +256,97 @@ try
         });
     });
     
-    Log.Information("Building application...");
+    Log.Information("STARTUP DEBUG: Building application...");
     var app = builder.Build();
-    Log.Information("Application built successfully");
+    Log.Information("STARTUP DEBUG: Application built successfully");
     
     // Initialize services but don't block
-    Log.Information("Creating service scope...");
+    Log.Information("STARTUP DEBUG: Creating service scope...");
     using (var scope = app.Services.CreateScope())
     {
-        Log.Information("Service scope created, resolving IMcpServer...");
+        Log.Information("STARTUP DEBUG: Service scope created, resolving IMcpServer...");
         var mcpServer = scope.ServiceProvider.GetRequiredService<IMcpServer>();
-        Log.Information("IMcpServer resolved, resolving tools...");
+        Log.Information("STARTUP DEBUG: IMcpServer resolved, resolving tools...");
         var tools = scope.ServiceProvider.GetServices<ITool>().ToList();
-        Log.Information("Tools resolved, resolving resource providers...");
+        Log.Information("STARTUP DEBUG: Tools resolved, resolving resource providers...");
         var resourceProviders = scope.ServiceProvider.GetServices<IResourceProvider>().ToList();
         
-        Log.Information("Found {ToolCount} tools and {ProviderCount} resource providers", 
+        Log.Information("STARTUP DEBUG: Found {ToolCount} tools and {ProviderCount} resource providers", 
             tools.Count, resourceProviders.Count);
         
         // Register tools and resources in background to avoid blocking startup
+        Log.Information("STARTUP DEBUG: Starting background registration task...");
         _ = Task.Run(() =>
         {
             try
             {
-                Log.Information("Registering tools in background...");
+                Log.Information("STARTUP DEBUG: Registering tools in background...");
                 foreach (var tool in tools)
                 {
-                    Log.Debug("Registering tool: {ToolName}", tool.Name);
+                    Log.Debug("STARTUP DEBUG: Registering tool: {ToolName}", tool.Name);
                     mcpServer.RegisterTool(tool);
                 }
                 
-                Log.Information("Registering resource providers in background...");
+                Log.Information("STARTUP DEBUG: Registering resource providers in background...");
                 foreach (var provider in resourceProviders)
                 {
-                    Log.Debug("Registering resource provider: {ProviderType}", provider.GetType().Name);
+                    Log.Debug("STARTUP DEBUG: Registering resource provider: {ProviderType}", provider.GetType().Name);
                     mcpServer.RegisterResourceProvider(provider);
                 }
                 
-                Log.Information("Background registration completed");
+                Log.Information("STARTUP DEBUG: Background registration completed");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Error during background registration");
+                Log.Error(ex, "STARTUP DEBUG: Error during background registration");
             }
         });
+        Log.Information("STARTUP DEBUG: Background registration task started");
     }
+    Log.Information("STARTUP DEBUG: Service scope disposed");
     
     // Configure pipeline
+    Log.Information("STARTUP DEBUG: Configuring middleware pipeline...");
     if (app.Environment.IsDevelopment())
     {
+        Log.Information("STARTUP DEBUG: Adding Swagger middleware...");
         app.UseSwagger();
         app.UseSwaggerUI();
+        Log.Information("STARTUP DEBUG: Swagger middleware added");
     }
     
+    Log.Information("STARTUP DEBUG: Adding CORS middleware...");
     app.UseCors("McpCors");
+    Log.Information("STARTUP DEBUG: CORS middleware added");
     
     // Add OpenTelemetry enrichment
+    Log.Information("STARTUP DEBUG: Adding OpenTelemetry enrichment...");
     app.UseOpenTelemetryEnrichment();
+    Log.Information("STARTUP DEBUG: OpenTelemetry enrichment added");
     
     // Add metrics middleware
+    Log.Information("STARTUP DEBUG: Adding metrics middleware...");
     app.UseMetrics();
+    Log.Information("STARTUP DEBUG: Metrics middleware added");
     
     // Add rate limiting middleware
+    Log.Information("STARTUP DEBUG: Adding rate limiting middleware...");
     app.UseHttpRateLimiting();
+    Log.Information("STARTUP DEBUG: Rate limiting middleware added");
     
     // Add WebSocket support
+    Log.Information("STARTUP DEBUG: Adding WebSocket support...");
     app.UseWebSockets();
     app.UseWebSocketMcp("/ws");
+    Log.Information("STARTUP DEBUG: WebSocket support added");
     
     // Map controllers
+    Log.Information("STARTUP DEBUG: Mapping controllers...");
     app.MapControllers();
+    Log.Information("STARTUP DEBUG: Controllers mapped");
     
     // Map endpoints
+    Log.Information("STARTUP DEBUG: Mapping endpoints...");
     app.MapGet("/", () => Results.Ok(new
     {
         name = "MCP Server",
@@ -323,6 +359,7 @@ try
             swagger = app.Environment.IsDevelopment() ? "/swagger" : null
         }
     }));
+    Log.Information("STARTUP DEBUG: Root endpoint mapped");
     
     app.MapGet("/health", (IMcpServer mcpServer) =>
     {
@@ -337,8 +374,10 @@ try
             }
         });
     });
+    Log.Information("STARTUP DEBUG: Health endpoint mapped");
     
     // SSE endpoint
+    Log.Information("STARTUP DEBUG: Mapping SSE endpoint...");
     app.MapPost("/sse", async (HttpContext context, IServiceProvider serviceProvider) =>
     {
         var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
@@ -387,10 +426,12 @@ try
             await WriteErrorResponse(context, null, -32603, "Internal error");
         }
     });
+    Log.Information("STARTUP DEBUG: SSE endpoint mapped");
     
-    Log.Information("Starting application on http://localhost:5080");
+    Log.Information("STARTUP DEBUG: All endpoints mapped, starting application on http://localhost:5080");
+    Log.Information("STARTUP DEBUG: Calling app.Run()...");
     app.Run();
-    Log.Information("Application stopped");
+    Log.Information("STARTUP DEBUG: Application stopped");
 }
 catch (Exception ex)
 {
